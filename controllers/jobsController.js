@@ -1,4 +1,5 @@
-const pool = require('../db');
+const { query } = require('../config/database');
+const logger = require('../utils/logger');
 
 const messages = {
     expired: {
@@ -8,101 +9,544 @@ const messages = {
     }
 };
 
+// Get all jobs with filtering, search, and pagination
 exports.getJobs = async (req, res) => {
     const lang = req.query.lang || 'en';
-
+    
     try {
-        const { rows } = await pool.query('SELECT * FROM jobs WHERE is_active = 1');
-        res.json(rows);
+        const {
+            category,
+            type,
+            location,
+            salaryMin,
+            salaryMax,
+            search,
+            page = 1,
+            limit = 20,
+            sortBy = 'created_at',
+            sortOrder = 'desc'
+        } = req.query;
+
+        // Build query dynamically
+        let whereClause = 'WHERE j.is_active = true AND (j.last_date IS NULL OR j.last_date >= CURRENT_DATE)';
+        const values = [];
+        let paramIndex = 1;
+
+        if (category) {
+            whereClause += ` AND j.category ILIKE $${paramIndex}`;
+            values.push(`%${category}%`);
+            paramIndex++;
+        }
+
+        if (type) {
+            whereClause += ` AND j.type = $${paramIndex}`;
+            values.push(type);
+            paramIndex++;
+        }
+
+        if (location) {
+            whereClause += ` AND j.location ILIKE $${paramIndex}`;
+            values.push(`%${location}%`);
+            paramIndex++;
+        }
+
+        if (salaryMin) {
+            whereClause += ` AND j.salary_max >= $${paramIndex}`;
+            values.push(parseInt(salaryMin));
+            paramIndex++;
+        }
+
+        if (salaryMax) {
+            whereClause += ` AND j.salary_min <= $${paramIndex}`;
+            values.push(parseInt(salaryMax));
+            paramIndex++;
+        }
+
+        if (search) {
+            whereClause += ` AND (j.title ILIKE $${paramIndex} OR j.description ILIKE $${paramIndex} OR j.skills_required && ARRAY[$${paramIndex}])`;
+            values.push(`%${search}%`);
+            paramIndex++;
+        }
+
+        // Validate sort parameters
+        const allowedSortColumns = ['created_at', 'last_date', 'salary_min', 'salary_max', 'views', 'title'];
+        const allowedSortOrders = ['asc', 'desc'];
+        
+        const orderBy = allowedSortColumns.includes(sortBy) ? sortBy : 'created_at';
+        const order = allowedSortOrders.includes(sortOrder.toLowerCase()) ? sortOrder.toLowerCase() : 'desc';
+
+        // Get total count
+        const countQuery = `SELECT COUNT(*) FROM jobs j ${whereClause}`;
+        const countResult = await query(countQuery, values);
+        const totalCount = parseInt(countResult.rows[0].count);
+
+        // Get paginated results
+        const offset = (parseInt(page) - 1) * parseInt(limit);
+        const mainQuery = `
+            SELECT 
+                j.*,
+                c.company_name,
+                c.company_slug,
+                c.logo_url as company_logo,
+                CASE 
+                    WHEN j.last_date < CURRENT_DATE THEN true 
+                    ELSE false 
+                END as is_expired
+            FROM jobs j
+            LEFT JOIN company_profiles c ON j.company_id = c.id
+            ${whereClause}
+            ORDER BY j.${orderBy} ${order}
+            LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
+        `;
+        
+        values.push(parseInt(limit), offset);
+
+        const result = await query(mainQuery, values);
+
+        res.json({
+            success: true,
+            data: result.rows,
+            pagination: {
+                page: parseInt(page),
+                limit: parseInt(limit),
+                totalCount,
+                totalPages: Math.ceil(totalCount / parseInt(limit)),
+                hasNextPage: offset + result.rows.length < totalCount,
+                hasPrevPage: parseInt(page) > 1
+            }
+        });
     } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: 'Failed to fetch jobs' });
+        logger.error('Get jobs error:', err);
+        res.status(500).json({ 
+            success: false,
+            error: 'Failed to fetch jobs' 
+        });
     }
 };
 
+// Get single job by ID or slug
 exports.getJobById = async (req, res) => {
     const lang = req.query.lang || 'en';
     const { id } = req.params;
 
     try {
-        const { rows } = await pool.query('SELECT * FROM jobs WHERE id = ?', [id]);
-        if (rows.length === 0) return res.status(404).json({ error: 'Job not found' });
+        // Try UUID first, then slug
+        const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+        
+        const query_text = `
+            SELECT 
+                j.*,
+                c.company_name,
+                c.company_slug,
+                c.description as company_description,
+                c.website as company_website,
+                c.logo_url as company_logo,
+                c.location as company_location,
+                c.verified as company_verified,
+                CASE 
+                    WHEN j.last_date < CURRENT_DATE THEN true 
+                    ELSE false 
+                END as is_expired
+            FROM jobs j
+            LEFT JOIN company_profiles c ON j.company_id = c.id
+            WHERE j.${isUUID ? 'id' : 'slug'} = $1
+        `;
 
-        const job = rows[0];
-        if (!job.is_active) {
-            return res.json({ message: messages.expired[lang] });
+        const result = await query(query_text, [id]);
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ 
+                success: false,
+                error: 'Job not found' 
+            });
         }
 
-        res.json(job);
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: 'Failed to fetch job' });
-    }
-};
+        const job = result.rows[0];
 
-// New: Create job
-exports.createJob = async (req, res) => {
-    try {
-        const { title, category, type, apply_link, criteria, fees_structure, last_date } = req.body;
-        const result = await pool.query(
-            `INSERT INTO jobs (title, category, type, apply_link, criteria, fees_structure, last_date, is_active)
-             VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
-            [title, category, type, apply_link, criteria, fees_structure, last_date]
-        );
-        res.json({ 
-            id: result.rows[0].id,
-            title, 
-            category, 
-            type, 
-            apply_link, 
-            criteria, 
-            fees_structure, 
-            last_date,
-            is_active: 1
+        // Check if job is expired
+        if (job.is_expired) {
+            return res.json({ 
+                success: true,
+                message: messages.expired[lang],
+                data: job
+            });
+        }
+
+        // Increment view count (async, don't wait)
+        query('UPDATE jobs SET views = views + 1 WHERE id = $1', [job.id])
+            .catch(err => logger.error('Failed to increment view count:', err));
+
+        // Log view if user is authenticated
+        if (req.user) {
+            query(
+                'INSERT INTO job_views (job_id, viewer_user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+                [job.id, req.user.id]
+            ).catch(err => logger.error('Failed to log job view:', err));
+        }
+
+        res.json({
+            success: true,
+            data: job
         });
     } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: 'Failed to create job' });
+        logger.error('Get job by ID error:', err);
+        res.status(500).json({ 
+            success: false,
+            error: 'Failed to fetch job' 
+        });
     }
 };
 
-// New: Update job
+// Create new job (company only)
+exports.createJob = async (req, res) => {
+    try {
+        const companyId = req.companyId;
+        const {
+            title,
+            description,
+            category,
+            type,
+            location,
+            salaryMin,
+            salaryMax,
+            experienceRequired,
+            educationRequired,
+            skillsRequired,
+            eligibilityCriteria,
+            feesStructure,
+            benefits,
+            applyLink,
+            applicationProcess,
+            lastDate,
+            vacancies
+        } = req.body;
+
+        // Generate slug
+        const slug = title.toLowerCase()
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/(^-|-$)/g, '') + '-' + Date.now();
+
+        const result = await query(
+            `INSERT INTO jobs (
+                company_id, title, slug, description, category, type, location,
+                salary_min, salary_max, experience_required, education_required,
+                skills_required, eligibility_criteria, fees_structure, benefits,
+                apply_link, application_process, last_date, vacancies, is_active
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, true)
+            RETURNING *`,
+            [
+                companyId, title, slug, description, category, type, location,
+                salaryMin, salaryMax, experienceRequired, educationRequired,
+                skillsRequired || [], eligibilityCriteria, feesStructure, benefits,
+                applyLink, applicationProcess, lastDate, vacancies || 1
+            ]
+        );
+
+        logger.info(`Job created: ${title} by company ${companyId}`);
+
+        res.status(201).json({
+            success: true,
+            message: 'Job created successfully',
+            data: result.rows[0]
+        });
+    } catch (err) {
+        logger.error('Create job error:', err);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to create job'
+        });
+    }
+};
+
+// Update job (company owner or admin)
 exports.updateJob = async (req, res) => {
     try {
         const { id } = req.params;
-        const { title, category, type, apply_link, criteria, fees_structure, last_date, is_active } = req.body;
-        
-        const result = await pool.query(
-            `UPDATE jobs 
-             SET title = ?, category = ?, type = ?, apply_link = ?, criteria = ?, fees_structure = ?, last_date = ?, is_active = ?
-             WHERE id = ?`,
-            [title, category, type, apply_link, criteria, fees_structure, last_date, is_active ? 1 : 0, id]
-        );
-        
-        if (result.rowCount === 0) {
-            return res.status(404).json({ error: 'Job not found' });
+        const companyId = req.companyId;
+        const isAdmin = req.user.role === 'admin';
+
+        // Check if job exists and belongs to company (unless admin)
+        let checkQuery = 'SELECT company_id FROM jobs WHERE id = $1';
+        const checkResult = await query(checkQuery, [id]);
+
+        if (checkResult.rows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                error: 'Job not found'
+            });
         }
-        
-        res.json({ success: true, message: 'Job updated successfully' });
+
+        if (!isAdmin && checkResult.rows[0].company_id !== companyId) {
+            return res.status(403).json({
+                success: false,
+                error: 'You do not have permission to update this job'
+            });
+        }
+
+        const updates = req.body;
+        const allowedFields = [
+            'title', 'description', 'category', 'type', 'location',
+            'salaryMin', 'salaryMax', 'experienceRequired', 'educationRequired',
+            'skillsRequired', 'eligibilityCriteria', 'feesStructure', 'benefits',
+            'applyLink', 'applicationProcess', 'lastDate', 'vacancies', 'isActive', 'isFeatured'
+        ];
+
+        const setClause = [];
+        const values = [];
+        let paramIndex = 1;
+
+        for (const [key, value] of Object.entries(updates)) {
+            const dbField = key.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
+            if (allowedFields.includes(key)) {
+                setClause.push(`${dbField} = $${paramIndex}`);
+                values.push(value);
+                paramIndex++;
+            }
+        }
+
+        if (setClause.length === 0) {
+            return res.status(400).json({
+                success: false,
+                error: 'No valid fields to update'
+            });
+        }
+
+        values.push(id);
+
+        const result = await query(
+            `UPDATE jobs 
+             SET ${setClause.join(', ')}, updated_at = NOW()
+             WHERE id = $${paramIndex}
+             RETURNING *`,
+            values
+        );
+
+        logger.info(`Job updated: ${id} by ${req.user.email}`);
+
+        res.json({
+            success: true,
+            message: 'Job updated successfully',
+            data: result.rows[0]
+        });
     } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: 'Failed to update job' });
+        logger.error('Update job error:', err);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to update job'
+        });
     }
 };
 
-// New: Delete job
+// Delete job (company owner or admin)
 exports.deleteJob = async (req, res) => {
     try {
         const { id } = req.params;
-        const result = await pool.query('DELETE FROM jobs WHERE id = ?', [id]);
-        
-        if (result.rowCount === 0) {
-            return res.status(404).json({ error: 'Job not found' });
+        const companyId = req.companyId;
+        const isAdmin = req.user.role === 'admin';
+
+        // Check ownership
+        const checkResult = await query(
+            'SELECT company_id FROM jobs WHERE id = $1',
+            [id]
+        );
+
+        if (checkResult.rows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                error: 'Job not found'
+            });
         }
-        
-        res.json({ success: true, message: 'Job deleted successfully' });
+
+        if (!isAdmin && checkResult.rows[0].company_id !== companyId) {
+            return res.status(403).json({
+                success: false,
+                error: 'You do not have permission to delete this job'
+            });
+        }
+
+        await query('DELETE FROM jobs WHERE id = $1', [id]);
+
+        logger.info(`Job deleted: ${id} by ${req.user.email}`);
+
+        res.json({
+            success: true,
+            message: 'Job deleted successfully'
+        });
     } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: 'Failed to delete job' });
+        logger.error('Delete job error:', err);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to delete job'
+        });
+    }
+};
+
+// Get job categories
+exports.getCategories = async (req, res) => {
+    try {
+        const result = await query(`
+            SELECT category, COUNT(*) as count
+            FROM jobs
+            WHERE is_active = true
+            AND (last_date IS NULL OR last_date >= CURRENT_DATE)
+            GROUP BY category
+            ORDER BY count DESC
+        `);
+
+        res.json({
+            success: true,
+            data: result.rows
+        });
+    } catch (err) {
+        logger.error('Get categories error:', err);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to fetch categories'
+        });
+    }
+};
+
+// Get featured jobs
+exports.getFeaturedJobs = async (req, res) => {
+    try {
+        const { limit = 6 } = req.query;
+
+        const result = await query(`
+            SELECT 
+                j.*,
+                c.company_name,
+                c.company_slug,
+                c.logo_url as company_logo
+            FROM jobs j
+            LEFT JOIN company_profiles c ON j.company_id = c.id
+            WHERE j.is_active = true
+            AND j.is_featured = true
+            AND (j.last_date IS NULL OR j.last_date >= CURRENT_DATE)
+            ORDER BY j.created_at DESC
+            LIMIT $1
+        `, [parseInt(limit)]);
+
+        res.json({
+            success: true,
+            data: result.rows
+        });
+    } catch (err) {
+        logger.error('Get featured jobs error:', err);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to fetch featured jobs'
+        });
+    }
+};
+
+// Search jobs with full-text search
+exports.searchJobs = async (req, res) => {
+    try {
+        const { q, page = 1, limit = 20 } = req.query;
+
+        if (!q || q.trim().length < 2) {
+            return res.status(400).json({
+                success: false,
+                error: 'Search query must be at least 2 characters'
+            });
+        }
+
+        const searchQuery = `
+            SELECT 
+                j.*,
+                c.company_name,
+                c.company_slug,
+                c.logo_url as company_logo,
+                ts_rank(to_tsvector('english', j.title || ' ' || COALESCE(j.description, '')), 
+                        plainto_tsquery('english', $1)) as relevance
+            FROM jobs j
+            LEFT JOIN company_profiles c ON j.company_id = c.id
+            WHERE j.is_active = true
+            AND (j.last_date IS NULL OR j.last_date >= CURRENT_DATE)
+            AND to_tsvector('english', j.title || ' ' || COALESCE(j.description, '')) @@ plainto_tsquery('english', $1)
+            ORDER BY relevance DESC, j.created_at DESC
+            LIMIT $2 OFFSET $3
+        `;
+
+        const offset = (parseInt(page) - 1) * parseInt(limit);
+        const result = await query(searchQuery, [q, parseInt(limit), offset]);
+
+        // Get total count
+        const countResult = await query(`
+            SELECT COUNT(*)
+            FROM jobs j
+            WHERE j.is_active = true
+            AND (j.last_date IS NULL OR j.last_date >= CURRENT_DATE)
+            AND to_tsvector('english', j.title || ' ' || COALESCE(j.description, '')) @@ plainto_tsquery('english', $1)
+        `, [q]);
+
+        res.json({
+            success: true,
+            data: result.rows,
+            pagination: {
+                page: parseInt(page),
+                limit: parseInt(limit),
+                totalCount: parseInt(countResult.rows[0].count),
+                totalPages: Math.ceil(parseInt(countResult.rows[0].count) / parseInt(limit))
+            }
+        });
+    } catch (err) {
+        logger.error('Search jobs error:', err);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to search jobs'
+        });
+    }
+};
+
+// Get similar jobs
+exports.getSimilarJobs = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { limit = 5 } = req.query;
+
+        // Get job details first
+        const jobResult = await query(
+            'SELECT category, skills_required FROM jobs WHERE id = $1',
+            [id]
+        );
+
+        if (jobResult.rows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                error: 'Job not found'
+            });
+        }
+
+        const { category, skills_required } = jobResult.rows[0];
+
+        const result = await query(`
+            SELECT 
+                j.*,
+                c.company_name,
+                c.company_slug,
+                c.logo_url as company_logo
+            FROM jobs j
+            LEFT JOIN company_profiles c ON j.company_id = c.id
+            WHERE j.id != $1
+            AND j.is_active = true
+            AND (j.last_date IS NULL OR j.last_date >= CURRENT_DATE)
+            AND (j.category = $2 OR j.skills_required && $3)
+            ORDER BY 
+                CASE WHEN j.category = $2 THEN 1 ELSE 0 END DESC,
+                j.created_at DESC
+            LIMIT $4
+        `, [id, category, skills_required || [], parseInt(limit)]);
+
+        res.json({
+            success: true,
+            data: result.rows
+        });
+    } catch (err) {
+        logger.error('Get similar jobs error:', err);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to fetch similar jobs'
+        });
     }
 };
