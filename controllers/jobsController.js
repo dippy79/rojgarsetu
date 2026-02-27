@@ -550,3 +550,483 @@ exports.getSimilarJobs = async (req, res) => {
         });
     }
 };
+
+// Save a job (candidate)
+exports.saveJob = async (req, res) => {
+    try {
+        const { id: jobId } = req.params;
+        const userId = req.user.id;
+
+        // Get candidate profile
+        const candidateResult = await query(
+            'SELECT id FROM candidate_profiles WHERE user_id = $1',
+            [userId]
+        );
+
+        if (candidateResult.rows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                error: 'Candidate profile not found'
+            });
+        }
+
+        const candidateId = candidateResult.rows[0].id;
+
+        // Check if job exists
+        const jobResult = await query(
+            'SELECT id, title FROM jobs WHERE id = $1',
+            [jobId]
+        );
+
+        if (jobResult.rows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                error: 'Job not found'
+            });
+        }
+
+        // Check if already saved
+        const existingSave = await query(
+            'SELECT id FROM saved_jobs WHERE candidate_id = $1 AND job_id = $2',
+            [candidateId, jobId]
+        );
+
+        if (existingSave.rows.length > 0) {
+            return res.status(400).json({
+                success: false,
+                error: 'Job already saved'
+            });
+        }
+
+        // Save the job
+        await query(
+            'INSERT INTO saved_jobs (candidate_id, job_id) VALUES ($1, $2)',
+            [candidateId, jobId]
+        );
+
+        logger.info(`Job ${jobId} saved by candidate ${candidateId}`);
+
+        res.json({
+            success: true,
+            message: 'Job saved successfully'
+        });
+    } catch (err) {
+        logger.error('Save job error:', err);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to save job'
+        });
+    }
+};
+
+// Unsave a job (candidate)
+exports.unsaveJob = async (req, res) => {
+    try {
+        const { id: jobId } = req.params;
+        const userId = req.user.id;
+
+        // Get candidate profile
+        const candidateResult = await query(
+            'SELECT id FROM candidate_profiles WHERE user_id = $1',
+            [userId]
+        );
+
+        if (candidateResult.rows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                error: 'Candidate profile not found'
+            });
+        }
+
+        const candidateId = candidateResult.rows[0].id;
+
+        // Remove from saved jobs
+        const result = await query(
+            'DELETE FROM saved_jobs WHERE candidate_id = $1 AND job_id = $2 RETURNING id',
+            [candidateId, jobId]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                error: 'Saved job not found'
+            });
+        }
+
+        logger.info(`Job ${jobId} unsaved by candidate ${candidateId}`);
+
+        res.json({
+            success: true,
+            message: 'Job removed from saved list'
+        });
+    } catch (err) {
+        logger.error('Unsave job error:', err);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to unsave job'
+        });
+    }
+};
+
+// Get saved jobs (candidate)
+exports.getSavedJobs = async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const { page = 1, limit = 20 } = req.query;
+
+        // Get candidate profile
+        const candidateResult = await query(
+            'SELECT id FROM candidate_profiles WHERE user_id = $1',
+            [userId]
+        );
+
+        if (candidateResult.rows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                error: 'Candidate profile not found'
+            });
+        }
+
+        const candidateId = candidateResult.rows[0].id;
+
+        // Get total count
+        const countResult = await query(
+            'SELECT COUNT(*) FROM saved_jobs WHERE candidate_id = $1',
+            [candidateId]
+        );
+        const totalCount = parseInt(countResult.rows[0].count);
+
+        // Get paginated saved jobs
+        const offset = (parseInt(page) - 1) * parseInt(limit);
+        const result = await query(`
+            SELECT 
+                j.*,
+                c.company_name,
+                c.company_slug,
+                c.logo_url as company_logo,
+                sj.saved_at
+            FROM saved_jobs sj
+            JOIN jobs j ON sj.job_id = j.id
+            LEFT JOIN company_profiles c ON j.company_id = c.id
+            WHERE sj.candidate_id = $1
+            ORDER BY sj.saved_at DESC
+            LIMIT $2 OFFSET $3
+        `, [candidateId, parseInt(limit), offset]);
+
+        res.json({
+            success: true,
+            data: result.rows,
+            pagination: {
+                page: parseInt(page),
+                limit: parseInt(limit),
+                totalCount,
+                totalPages: Math.ceil(totalCount / parseInt(limit))
+            }
+        });
+    } catch (err) {
+        logger.error('Get saved jobs error:', err);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to fetch saved jobs'
+        });
+    }
+};
+
+// Apply to job (candidate)
+exports.applyToJob = async (req, res) => {
+    try {
+        const { id: jobId } = req.params;
+        const userId = req.user.id;
+        const { coverLetter, resumeUrl } = req.body;
+
+        // Get candidate profile
+        const candidateResult = await query(
+            'SELECT id, resume_url FROM candidate_profiles WHERE user_id = $1',
+            [userId]
+        );
+
+        if (candidateResult.rows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                error: 'Candidate profile not found'
+            });
+        }
+
+        const candidateId = candidateResult.rows[0].id;
+        const candidateResumeUrl = candidateResult.rows[0].resume_url;
+
+        // Check if job exists and is active
+        const jobResult = await query(
+            `SELECT id, title, company_id, last_date, is_active 
+             FROM jobs WHERE id = $1`,
+            [jobId]
+        );
+
+        if (jobResult.rows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                error: 'Job not found'
+            });
+        }
+
+        const job = jobResult.rows[0];
+
+        if (!job.is_active) {
+            return res.status(400).json({
+                success: false,
+                error: 'This job is no longer accepting applications'
+            });
+        }
+
+        if (job.last_date && new Date(job.last_date) < new Date()) {
+            return res.status(400).json({
+                success: false,
+                error: 'The application deadline for this job has passed'
+            });
+        }
+
+        // Check if already applied
+        const existingApp = await query(
+            'SELECT id FROM job_applications WHERE candidate_id = $1 AND job_id = $2',
+            [candidateId, jobId]
+        );
+
+        if (existingApp.rows.length > 0) {
+            return res.status(400).json({
+                success: false,
+                error: 'You have already applied to this job'
+            });
+        }
+
+        // Create application
+        const result = await query(`
+            INSERT INTO job_applications (job_id, candidate_id, cover_letter, resume_url, status)
+            VALUES ($1, $2, $3, $4, 'applied')
+            RETURNING *
+        `, [jobId, candidateId, coverLetter, resumeUrl || candidateResumeUrl]);
+
+        // Update job applications count
+        await query(
+            'UPDATE jobs SET applications_count = applications_count + 1 WHERE id = $1',
+            [jobId]
+        );
+
+        // Create notification for company
+        await query(`
+            INSERT INTO notifications (user_id, type, title, message, data)
+            SELECT cp.user_id, 'new_application', 'New Job Application', 
+                   $1::text, $2::jsonb
+            FROM company_profiles cp
+            WHERE cp.id = $3
+        `, [`New application for ${job.title}`, JSON.stringify({ jobId, applicationId: result.rows[0].id }), job.company_id]);
+
+        logger.info(`Application created for job ${jobId} by candidate ${candidateId}`);
+
+        res.status(201).json({
+            success: true,
+            message: 'Application submitted successfully',
+            data: result.rows[0]
+        });
+    } catch (err) {
+        logger.error('Apply to job error:', err);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to apply to job'
+        });
+    }
+};
+
+// Withdraw application (candidate)
+exports.withdrawApplication = async (req, res) => {
+    try {
+        const { id: jobId } = req.params;
+        const userId = req.user.id;
+
+        // Get candidate profile
+        const candidateResult = await query(
+            'SELECT id FROM candidate_profiles WHERE user_id = $1',
+            [userId]
+        );
+
+        if (candidateResult.rows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                error: 'Candidate profile not found'
+            });
+        }
+
+        const candidateId = candidateResult.rows[0].id;
+
+        // Check if application exists
+        const existingApp = await query(
+            'SELECT id, status FROM job_applications WHERE candidate_id = $1 AND job_id = $2',
+            [candidateId, jobId]
+        );
+
+        if (existingApp.rows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                error: 'Application not found'
+            });
+        }
+
+        if (existingApp.rows[0].status === 'hired' || existingApp.rows[0].status === 'withdrawn') {
+            return res.status(400).json({
+                success: false,
+                error: 'Cannot withdraw this application'
+            });
+        }
+
+        // Update status to withdrawn
+        await query(
+            `UPDATE job_applications SET status = 'withdrawn', updated_at = NOW() 
+             WHERE candidate_id = $1 AND job_id = $2`,
+            [candidateId, jobId]
+        );
+
+        // Update job applications count
+        await query(
+            'UPDATE jobs SET applications_count = GREATEST(applications_count - 1, 0) WHERE id = $1',
+            [jobId]
+        );
+
+        logger.info(`Application withdrawn for job ${jobId} by candidate ${candidateId}`);
+
+        res.json({
+            success: true,
+            message: 'Application withdrawn successfully'
+        });
+    } catch (err) {
+        logger.error('Withdraw application error:', err);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to withdraw application'
+        });
+    }
+};
+
+// Get my applications (candidate)
+exports.getMyApplications = async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const { page = 1, limit = 20, status } = req.query;
+
+        // Get candidate profile
+        const candidateResult = await query(
+            'SELECT id FROM candidate_profiles WHERE user_id = $1',
+            [userId]
+        );
+
+        if (candidateResult.rows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                error: 'Candidate profile not found'
+            });
+        }
+
+        const candidateId = candidateResult.rows[0].id;
+
+        let whereClause = 'WHERE ja.candidate_id = $1';
+        const values = [candidateId];
+        let paramIndex = 2;
+
+        if (status) {
+            whereClause += ` AND ja.status = $${paramIndex}`;
+            values.push(status);
+            paramIndex++;
+        }
+
+        // Get total count
+        const countResult = await query(
+            `SELECT COUNT(*) FROM job_applications ja ${whereClause}`,
+            values
+        );
+        const totalCount = parseInt(countResult.rows[0].count);
+
+        // Get paginated applications
+        const offset = (parseInt(page) - 1) * parseInt(limit);
+        const result = await query(`
+            SELECT 
+                ja.id, ja.status, ja.applied_at, ja.updated_at, ja.cover_letter, ja.notes,
+                j.id as job_id, j.title, j.location, j.type, j.salary_min, j.salary_max,
+                c.company_name, c.company_slug, c.logo_url as company_logo
+            FROM job_applications ja
+            JOIN jobs j ON ja.job_id = j.id
+            LEFT JOIN company_profiles c ON j.company_id = c.id
+            ${whereClause}
+            ORDER BY ja.applied_at DESC
+            LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
+        `, [...values, parseInt(limit), offset]);
+
+        res.json({
+            success: true,
+            data: result.rows,
+            pagination: {
+                page: parseInt(page),
+                limit: parseInt(limit),
+                totalCount,
+                totalPages: Math.ceil(totalCount / parseInt(limit))
+            }
+        });
+    } catch (err) {
+        logger.error('Get my applications error:', err);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to fetch applications'
+        });
+    }
+};
+
+// Get application details (candidate)
+exports.getMyApplication = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const userId = req.user.id;
+
+        // Get candidate profile
+        const candidateResult = await query(
+            'SELECT id FROM candidate_profiles WHERE user_id = $1',
+            [userId]
+        );
+
+        if (candidateResult.rows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                error: 'Candidate profile not found'
+            });
+        }
+
+        const candidateId = candidateResult.rows[0].id;
+
+        const result = await query(`
+            SELECT 
+                ja.id, ja.status, ja.applied_at, ja.updated_at, ja.cover_letter, ja.notes, ja.resume_url,
+                j.id as job_id, j.title, j.description, j.location, j.type, j.salary_min, j.salary_max,
+                j.category, j.skills_required, j.benefits,
+                c.company_name, c.company_slug, c.logo_url as company_logo, 
+                c.description as company_description, c.website as company_website
+            FROM job_applications ja
+            JOIN jobs j ON ja.job_id = j.id
+            LEFT JOIN company_profiles c ON j.company_id = c.id
+            WHERE ja.id = $1 AND ja.candidate_id = $2
+        `, [id, candidateId]);
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                error: 'Application not found'
+            });
+        }
+
+        res.json({
+            success: true,
+            data: result.rows[0]
+        });
+    } catch (err) {
+        logger.error('Get my application error:', err);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to fetch application'
+        });
+    }
+};

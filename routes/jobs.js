@@ -9,7 +9,14 @@ const {
     getCategories,
     getFeaturedJobs,
     searchJobs,
-    getSimilarJobs
+    getSimilarJobs,
+    saveJob,
+    unsaveJob,
+    getSavedJobs,
+    applyToJob,
+    withdrawApplication,
+    getMyApplications,
+    getMyApplication
 } = require('../controllers/jobsController');
 const { authenticate, authorize, requireCompanyOwnership, optionalAuth } = require('../middleware/auth');
 const { 
@@ -52,6 +59,19 @@ router.delete('/:id',
     validateUUID('id'),
     deleteJob
 );    // DELETE /jobs/:id
+
+// Candidate routes - Save/Unsave jobs
+router.post('/:id/save', authenticate, authorize('candidate'), saveJob);    // POST /jobs/:id/save
+router.delete('/:id/save', authenticate, authorize('candidate'), unsaveJob);    // DELETE /jobs/:id/save
+router.get('/saved', authenticate, authorize('candidate'), getSavedJobs);    // GET /jobs/saved
+
+// Candidate routes - Apply to job
+router.post('/:id/apply', authenticate, authorize('candidate'), applyToJob);    // POST /jobs/:id/apply
+router.delete('/:id/apply', authenticate, authorize('candidate'), withdrawApplication);    // DELETE /jobs/:id/apply
+
+// Candidate routes - My applications
+router.get('/applications', authenticate, authorize('candidate'), getMyApplications);    // GET /jobs/applications
+router.get('/applications/:id', authenticate, authorize('candidate'), getMyApplication);    // GET /jobs/applications/:id
 
 // Single job - must be last to avoid conflicts with other routes
 router.get('/:id', optionalAuth, getJobById);    // GET /jobs/:id?lang=

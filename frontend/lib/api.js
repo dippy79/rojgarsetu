@@ -80,13 +80,13 @@ export const jobsAPI = {
     deleteJob: (id) => api.delete(`/api/jobs/${id}`),
     
     // Save job (candidate)
-    saveJob: (jobId) => api.post('/api/jobs/${jobId}/save'),
+    saveJob: (jobId) => api.post(`/api/jobs/${jobId}/save`),
     
     // Unsave job (candidate)
     unsaveJob: (jobId) => api.delete(`/api/jobs/${jobId}/save`),
     
     // Get saved jobs (candidate)
-    getSavedJobs: () => api.get('/api/jobs/saved'),
+    getSavedJobs: (params) => api.get('/api/jobs/saved', { params }),
     
     // Apply to job (candidate)
     applyToJob: (jobId, data) => api.post(`/api/jobs/${jobId}/apply`, data),
@@ -95,7 +95,10 @@ export const jobsAPI = {
     withdrawApplication: (jobId) => api.delete(`/api/jobs/${jobId}/apply`),
     
     // Get my applications (candidate)
-    getMyApplications: () => api.get('/api/jobs/applications')
+    getMyApplications: (params) => api.get('/api/jobs/applications', { params }),
+    
+    // Get single application (candidate)
+    getMyApplication: (id) => api.get(`/api/jobs/applications/${id}`)
 };
 
 // Courses API
@@ -168,7 +171,7 @@ export const applicationsAPI = {
 // Notifications API
 export const notificationsAPI = {
     // Get my notifications
-    getNotifications: () => api.get('/api/notifications'),
+    getNotifications: (params) => api.get('/api/notifications', { params }),
     
     // Mark notification as read
     markAsRead: (id) => api.put(`/api/notifications/${id}/read`),
@@ -180,7 +183,54 @@ export const notificationsAPI = {
     deleteNotification: (id) => api.delete(`/api/notifications/${id}`),
     
     // Get unread count
-    getUnreadCount: () => api.get('/api/notifications/unread-count')
+    getUnreadCount: () => api.get('/api/notifications/unread-count'),
+    
+    // Get preferences
+    getPreferences: () => api.get('/api/notifications/preferences'),
+    
+    // Update preferences
+    updatePreferences: (data) => api.put('/api/notifications/preferences', data)
+};
+
+// Profile API
+export const profileAPI = {
+    // Get candidate profile
+    getCandidateProfile: () => api.get('/api/profile/candidate'),
+    
+    // Update candidate profile
+    updateCandidateProfile: (data) => api.put('/api/profile/candidate', data),
+    
+    // Get candidate dashboard
+    getCandidateDashboard: () => api.get('/api/profile/candidate/dashboard'),
+    
+    // Get company profile
+    getCompanyProfile: () => api.get('/api/profile/company'),
+    
+    // Update company profile
+    updateCompanyProfile: (data) => api.put('/api/profile/company', data),
+    
+    // Get company dashboard
+    getCompanyDashboard: () => api.get('/api/profile/company/dashboard')
+};
+
+// Company Management API
+export const companyAPI = {
+    // Get company's jobs
+    getCompanyJobs: (params) => api.get('/api/company/jobs', { params }),
+    
+    // Get applicants for a job
+    getJobApplicants: (jobId, params) => api.get(`/api/company/jobs/${jobId}/applicants`, { params }),
+    
+    // Update applicant status
+    updateApplicantStatus: (jobId, applicationId, data) => 
+        api.put(`/api/company/jobs/${jobId}/applicants/${applicationId}`, data),
+    
+    // Bulk update applicants
+    bulkUpdateApplicants: (jobId, data) => 
+        api.post(`/api/company/jobs/${jobId}/applicants/bulk-update`, data),
+    
+    // Get company analytics
+    getCompanyAnalytics: (params) => api.get('/api/company/analytics', { params })
 };
 
 export default api;

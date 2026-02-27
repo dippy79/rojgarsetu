@@ -12,6 +12,9 @@ const logger = require('./utils/logger');
 const jobsRoutes = require('./routes/jobs');
 const coursesRoutes = require('./routes/courses');
 const authRoutes = require('./routes/auth');
+const profileRoutes = require('./routes/profile');
+const companyRoutes = require('./routes/company');
+const notificationsRoutes = require('./routes/notifications');
 
 // Import middleware
 const { 
@@ -66,6 +69,9 @@ app.get('/health', (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/jobs', jobsRoutes);
 app.use('/api/courses', coursesRoutes);
+app.use('/api/profile', profileRoutes);
+app.use('/api/company', companyRoutes);
+app.use('/api/notifications', notificationsRoutes);
 
 // Root endpoint
 app.get('/', (req, res) => {
@@ -77,6 +83,9 @@ app.get('/', (req, res) => {
             auth: '/api/auth',
             jobs: '/api/jobs',
             courses: '/api/courses',
+            profile: '/api/profile',
+            company: '/api/company',
+            notifications: '/api/notifications',
             health: '/health'
         }
     });
