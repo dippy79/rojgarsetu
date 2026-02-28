@@ -1,7 +1,7 @@
 // frontend/lib/api.js - API utilities for frontend
 import axios from 'axios';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:3000';
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:5000';
 
 // Create axios instance with default config
 const api = axios.create({
