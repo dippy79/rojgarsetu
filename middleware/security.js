@@ -102,23 +102,90 @@ const securityHeaders = helmet({
     xssFilter: true,
 });
 
-// CORS configuration
-const corsOptions = {
-    origin: process.env.ALLOWED_ORIGINS?.split(',') || [
+// CORS configuration with dynamic origin support
+const corsOptionsDelegate = (req, callback) => {
+    // Guard clause - if no req object, allow all
+    if (!req || typeof req !== 'object') {
+        return callback(null, true);
+    }
+    
+    // Get origin from request - safely handle missing header method
+    let origin = null;
+    try {
+        origin = req.header ? req.header('Origin') : req.headers?.origin || null;
+    } catch (e) {
+        logger.warn('CORS: Error reading origin header:', e.message);
+    }
+    
+    // Default allowed origins
+    const defaultAllowedOrigins = [
         'http://localhost:3000',
         'http://localhost:3001',
-        'http://localhost:3002'
-    ],
+        'http://localhost:3002',
+        'http://127.0.0.1:3000',
+        'http://127.0.0.1:3001'
+    ];
+    
+    // GitHub Codespaces patterns
+    const codespacePatterns = [
+        /^https:\/\/.*-.*-.*-.*\.app\.github\.dev$/,
+        /^https:\/\/.*-.*-.*\.app\.github\.dev$/,
+        /^https:\/\/.*\.github\.dev$/
+    ];
+    
+    // Vercel preview/production patterns
+    const vercelPatterns = [
+        /^https:\/\/.*-preview\..*$/,
+        /^https:\/\/.*\.vercel\.app$/
+    ];
+    
+    // Combine all patterns
+    const allowedPatterns = [...codespacePatterns, ...vercelPatterns];
+    
+    // If ALLOWED_ORIGINS env var is set, use it
+    let origins = defaultAllowedOrigins;
+    if (process.env.ALLOWED_ORIGINS) {
+        origins = process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim());
+    }
+    
+    // Check if origin is allowed
+    const isAllowed = !origin || origins.includes(origin) || 
+        allowedPatterns.some(pattern => pattern.test(origin));
+    
+    if (isAllowed) {
+        callback(null, origin || true);
+    } else {
+        logger.warn(`CORS blocked origin: ${origin}`);
+        callback(new Error('Not allowed by CORS'));
+    }
+};
+
+const corsOptions = {
+    origin: corsOptionsDelegate,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+    allowedHeaders: [
+        'Content-Type', 
+        'Authorization', 
+        'X-Requested-With',
+        'Accept',
+        'X-Client-Version'
+    ],
+    exposedHeaders: ['X-Total-Count', 'X-Page-Count'],
     credentials: true,
-    maxAge: 86400 // 24 hours
+    maxAge: 86400, // 24 hours
+    preflightContinue: false,
+    optionsSuccessStatus: 204
 };
 
 // Request sanitization middleware
 const sanitizeRequest = (req, res, next) => {
+    // Defensive guard - ensure req object is valid
+    if (!req || typeof req !== 'object') {
+        return next();
+    }
+
     // Sanitize query parameters
-    if (req.query) {
+    if (req.query && typeof req.query === 'object') {
         Object.keys(req.query).forEach(key => {
             if (typeof req.query[key] === 'string') {
                 // Remove potential NoSQL injection patterns
@@ -137,11 +204,15 @@ const sanitizeRequest = (req, res, next) => {
         /eval\s*\(/i
     ];
 
-    const requestData = JSON.stringify({ ...req.body, ...req.query, ...req.params });
+    const requestData = JSON.stringify({ 
+        ...(req.body || {}), 
+        ...(req.query || {}), 
+        ...(req.params || {}) 
+    });
     
     for (const pattern of suspiciousPatterns) {
         if (pattern.test(requestData)) {
-            logger.warn(`Suspicious request detected from ${req.ip}: ${pattern.toString()}`);
+            logger.warn(`Suspicious request detected from ${req.ip || 'unknown'}: ${pattern.toString()}`);
             return res.status(400).json({
                 success: false,
                 error: 'Invalid request data'
