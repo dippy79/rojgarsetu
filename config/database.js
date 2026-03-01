@@ -1,6 +1,15 @@
 // config/database.js - PostgreSQL configuration with connection pooling
 const { Pool } = require('pg');
-require('dotenv').config();
+
+// Load dotenv FIRST before any other imports that might need env vars
+const result = require('dotenv').config({ path: '.env' });
+
+if (result.error) {
+    console.error('Error loading .env file:', result.error);
+} else {
+    console.log('✓ .env file loaded successfully');
+    console.log('DB_PASSWORD from env:', process.env.DB_PASSWORD ? '***present***' : '***missing***');
+}
 
 // Validate required environment variables
 const requiredEnvVars = ['DB_HOST', 'DB_PORT', 'DB_NAME', 'DB_USER', 'DB_PASSWORD'];
@@ -11,16 +20,18 @@ if (missingEnvVars.length > 0) {
     console.error('Please ensure .env file is properly configured');
 }
 
-// Create PostgreSQL pool configuration
+// Create PostgreSQL pool configuration - READ EXACTLY FROM PROCESS.ENV
+const dbPassword = process.env.DB_PASSWORD || '';
+
 const poolConfig = {
     host: process.env.DB_HOST || 'localhost',
     port: parseInt(process.env.DB_PORT, 10) || 5432,
     database: process.env.DB_NAME || 'rojgarsetu',
     user: process.env.DB_USER || 'postgres',
-    password: process.env.DB_PASSWORD || '',
+    password: dbPassword,
     max: 20,
     idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 5000,
+    connectionTimeoutMillis: 10000,  // Increased timeout for better reliability
 };
 
 // Log configuration (without password)
