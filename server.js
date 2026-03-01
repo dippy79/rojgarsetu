@@ -5,13 +5,16 @@ const cron = require('node-cron');
 require('dotenv').config();
 
 // Import configurations and utilities
-const { pool, query } = require('./config/database');
+const { pool, query, testConnection } = require('./config/database');
 const logger = require('./utils/logger');
 
 // Import routes
 const jobsRoutes = require('./routes/jobs');
 const coursesRoutes = require('./routes/courses');
 const authRoutes = require('./routes/auth');
+const profileRoutes = require('./routes/profile');
+const companyRoutes = require('./routes/company');
+const notificationsRoutes = require('./routes/notifications');
 
 // Import middleware
 const { 
@@ -27,7 +30,7 @@ const {
 const { scrapeGovJobs } = require('./crawler/jobCrawler');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 5000;
 
 // Security middleware
 app.use(securityHeaders);
@@ -53,19 +56,38 @@ app.use((req, res, next) => {
     next();
 });
 
-// Health check endpoint
-app.get('/health', (req, res) => {
-    res.json({ 
-        status: 'ok', 
+// Health check endpoint with database connectivity
+app.get('/health', async (req, res) => {
+    const healthCheck = {
+        status: 'ok',
         timestamp: new Date().toISOString(),
-        uptime: process.uptime()
-    });
+        uptime: process.uptime(),
+        database: 'unknown'
+    };
+    
+    try {
+        // Test database connection with a simple query
+        await query('SELECT 1 as health');
+        healthCheck.database = 'connected';
+        
+        res.status(200).json(healthCheck);
+    } catch (err) {
+        logger.error('Health check - Database connection failed:', err.message);
+        healthCheck.status = 'degraded';
+        healthCheck.database = 'disconnected';
+        healthCheck.error = err.message;
+        
+        res.status(503).json(healthCheck);
+    }
 });
 
 // API Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/jobs', jobsRoutes);
 app.use('/api/courses', coursesRoutes);
+app.use('/api/profile', profileRoutes);
+app.use('/api/company', companyRoutes);
+app.use('/api/notifications', notificationsRoutes);
 
 // Root endpoint
 app.get('/', (req, res) => {
@@ -77,6 +99,9 @@ app.get('/', (req, res) => {
             auth: '/api/auth',
             jobs: '/api/jobs',
             courses: '/api/courses',
+            profile: '/api/profile',
+            company: '/api/company',
+            notifications: '/api/notifications',
             health: '/health'
         }
     });
@@ -145,11 +170,38 @@ cron.schedule('0 2 * * 0', async () => {
 app.use(notFoundHandler);
 app.use(errorHandler);
 
-// Start server
-app.listen(PORT, () => {
-    logger.info(`Server running on http://localhost:${PORT}`);
-    logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
-});
+// Start server with database connection test
+const startServer = async () => {
+    try {
+        // Test database connection before starting server
+        console.log('\n=== Testing Database Connection ===');
+        const dbTest = await testConnection();
+        
+        if (dbTest.success) {
+            console.log('=== Database Connection Successful ===\n');
+        } else {
+            console.log('=== WARNING: Database Connection Failed ===');
+            console.log('Server will start in degraded mode (database features may not work)');
+            console.log(`Error: ${dbTest.error}\n`);
+        }
+
+        // Start the server
+        app.listen(PORT, () => {
+            logger.info(`Server running on http://localhost:${PORT}`);
+            logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
+            logger.info(`Database: ${dbTest.success ? 'connected' : 'disconnected (degraded mode)'}`);
+        });
+    } catch (err) {
+        console.error('Failed to start server:', err.message);
+        // Start server in degraded mode even if DB test throws
+        app.listen(PORT, () => {
+            logger.info(`Server running on http://localhost:${PORT} (degraded mode)`);
+            logger.error('Database unavailable');
+        });
+    }
+};
+
+startServer();
 
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (reason, promise) => {

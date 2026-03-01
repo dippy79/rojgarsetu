@@ -1,27 +1,86 @@
 // config/database.js - PostgreSQL configuration with connection pooling
 const { Pool } = require('pg');
-require('dotenv').config();
 
-const pool = new Pool({
+// Load dotenv FIRST before any other imports that might need env vars
+const result = require('dotenv').config({ path: '.env' });
+
+if (result.error) {
+    console.error('Error loading .env file:', result.error);
+} else {
+    console.log('✓ .env file loaded successfully');
+    console.log('DB_PASSWORD from env:', process.env.DB_PASSWORD ? '***present***' : '***missing***');
+}
+
+// Validate required environment variables
+const requiredEnvVars = ['DB_HOST', 'DB_PORT', 'DB_NAME', 'DB_USER', 'DB_PASSWORD'];
+const missingEnvVars = requiredEnvVars.filter(envVar => !process.env[envVar]);
+
+if (missingEnvVars.length > 0) {
+    console.error(`Database configuration error: Missing required environment variables: ${missingEnvVars.join(', ')}`);
+    console.error('Please ensure .env file is properly configured');
+}
+
+// Create PostgreSQL pool configuration - READ EXACTLY FROM PROCESS.ENV
+const dbPassword = process.env.DB_PASSWORD || '';
+
+const poolConfig = {
     host: process.env.DB_HOST || 'localhost',
-    port: process.env.DB_PORT || 5432,
+    port: parseInt(process.env.DB_PORT, 10) || 5432,
     database: process.env.DB_NAME || 'rojgarsetu',
     user: process.env.DB_USER || 'postgres',
-    password: process.env.DB_PASSWORD || 'password',
-    max: 20, // Maximum number of connections in pool
-    idleTimeoutMillis: 30000, // Close idle connections after 30 seconds
-    connectionTimeoutMillis: 2000, // Return error after 2 seconds if connection not established
+    password: dbPassword,
+    max: 20,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 10000,  // Increased timeout for better reliability
+};
+
+// Log configuration (without password)
+console.log('Database configuration:', {
+    host: poolConfig.host,
+    port: poolConfig.port,
+    database: poolConfig.database,
+    user: poolConfig.user,
+    max: poolConfig.max
 });
 
-// Test connection
+// Create the pool
+const pool = new Pool(poolConfig);
+
+// Connection event handlers
 pool.on('connect', () => {
-    console.log('PostgreSQL database connected successfully');
+    console.log('✓ PostgreSQL client connected to database');
+});
+
+pool.on('acquire', () => {
+    console.log('✓ PostgreSQL client acquired from pool');
 });
 
 pool.on('error', (err) => {
-    console.error('Unexpected error on idle client', err);
-    process.exit(-1);
+    console.error('✗ Unexpected error on idle PostgreSQL client:', err.message);
+    // Don't exit on error - allow graceful degradation
 });
+
+pool.on('remove', () => {
+    console.log('PostgreSQL client removed from pool');
+});
+
+// Test connection function
+const testConnection = async () => {
+    const client = await pool.connect();
+    try {
+        const result = await client.query('SELECT NOW() as now, current_user as user, current_database() as database');
+        console.log('✓ Database connection test successful!');
+        console.log(`  - Current time: ${result.rows[0].now}`);
+        console.log(`  - User: ${result.rows[0].user}`);
+        console.log(`  - Database: ${result.rows[0].database}`);
+        return { success: true, info: result.rows[0] };
+    } catch (err) {
+        console.error('✗ Database connection test failed:', err.message);
+        return { success: false, error: err.message };
+    } finally {
+        client.release();
+    }
+};
 
 // Query helper with logging
 const query = async (text, params) => {
@@ -29,10 +88,14 @@ const query = async (text, params) => {
     try {
         const result = await pool.query(text, params);
         const duration = Date.now() - start;
-        console.log('Executed query', { text: text.substring(0, 100), duration, rows: result.rowCount });
+        console.log('Query executed', { 
+            text: text.substring(0, 100), 
+            duration: `${duration}ms`, 
+            rows: result.rowCount 
+        });
         return result;
     } catch (error) {
-        console.error('Database query error:', error);
+        console.error('Database query error:', error.message);
         throw error;
     }
 };
@@ -47,14 +110,26 @@ const transaction = async (callback) => {
         return result;
     } catch (error) {
         await client.query('ROLLBACK');
+        console.error('Transaction rolled back:', error.message);
         throw error;
     } finally {
         client.release();
     }
 };
 
+// Get pool status
+const getPoolStatus = () => {
+    return {
+        totalCount: pool.totalCount,
+        idleCount: pool.idleCount,
+        waitingCount: pool.waitingCount
+    };
+};
+
 module.exports = {
     pool,
     query,
-    transaction
+    transaction,
+    testConnection,
+    getPoolStatus
 };
