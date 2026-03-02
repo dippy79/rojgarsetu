@@ -16,10 +16,6 @@ exports.getCourses = async (req, res) => {
     try {
         const {
             category,
-            duration,
-            mode,
-            feesMin,
-            feesMax,
             search,
             page = 1,
             limit = 20,
@@ -27,71 +23,44 @@ exports.getCourses = async (req, res) => {
             sortOrder = 'desc'
         } = req.query;
 
-        // Build query dynamically
-        let whereClause = 'WHERE c.is_active = true';
+        // Build query dynamically - using existing database schema
+        let whereClause = 'WHERE is_active = true';
         const values = [];
         let paramIndex = 1;
 
         if (category) {
-            whereClause += ` AND c.category ILIKE $${paramIndex}`;
+            whereClause += ` AND category ILIKE $${paramIndex}`;
             values.push(`%${category}%`);
             paramIndex++;
         }
 
-        if (duration) {
-            whereClause += ` AND c.duration ILIKE $${paramIndex}`;
-            values.push(`%${duration}%`);
-            paramIndex++;
-        }
-
-        if (mode) {
-            whereClause += ` AND c.mode = $${paramIndex}`;
-            values.push(mode);
-            paramIndex++;
-        }
-
-        if (feesMin) {
-            whereClause += ` AND c.fees_amount >= $${paramIndex}`;
-            values.push(parseInt(feesMin));
-            paramIndex++;
-        }
-
-        if (feesMax) {
-            whereClause += ` AND c.fees_amount <= $${paramIndex}`;
-            values.push(parseInt(feesMax));
-            paramIndex++;
-        }
-
         if (search) {
-            whereClause += ` AND (c.name ILIKE $${paramIndex} OR c.description ILIKE $${paramIndex})`;
+            whereClause += ` AND (title ILIKE $${paramIndex} OR description ILIKE $${paramIndex})`;
             values.push(`%${search}%`);
             paramIndex++;
         }
 
         // Validate sort parameters
-        const allowedSortColumns = ['created_at', 'fees_amount', 'rating', 'name', 'enrolled_count'];
+        const allowedSortColumns = ['created_at', 'title', 'fees'];
         const allowedSortOrders = ['asc', 'desc'];
         
         const orderBy = allowedSortColumns.includes(sortBy) ? sortBy : 'created_at';
         const order = allowedSortOrders.includes(sortOrder.toLowerCase()) ? sortOrder.toLowerCase() : 'desc';
 
         // Get total count
-        const countQuery = `SELECT COUNT(*) FROM courses c ${whereClause}`;
+        const countQuery = `SELECT COUNT(*) FROM courses ${whereClause}`;
         const countResult = await query(countQuery, values);
         const totalCount = parseInt(countResult.rows[0].count);
 
-        // Get paginated results
+        // Get paginated results - using simple schema
         const offset = (parseInt(page) - 1) * parseInt(limit);
         const mainQuery = `
             SELECT 
-                c.*,
-                p.company_name as provider_name,
-                p.company_slug as provider_slug,
-                p.logo_url as provider_logo
-            FROM courses c
-            LEFT JOIN company_profiles p ON c.provider_id = p.id
+                id, title, provider, category, duration, fees, 
+                apply_link, description, is_active, created_at, updated_at
+            FROM courses
             ${whereClause}
-            ORDER BY c.${orderBy} ${order}
+            ORDER BY ${orderBy} ${order}
             LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
         `;
         
@@ -120,28 +89,18 @@ exports.getCourses = async (req, res) => {
     }
 };
 
-// Get single course by ID or slug
+// Get single course by ID
 exports.getCourseById = async (req, res) => {
     const lang = req.query.lang || 'en';
     const { id } = req.params;
 
     try {
-        // Try UUID first, then slug
-        const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
-        
         const query_text = `
             SELECT 
-                c.*,
-                p.company_name as provider_name,
-                p.company_slug as provider_slug,
-                p.description as provider_description,
-                p.website as provider_website,
-                p.logo_url as provider_logo,
-                p.location as provider_location,
-                p.verified as provider_verified
-            FROM courses c
-            LEFT JOIN company_profiles p ON c.provider_id = p.id
-            WHERE c.${isUUID ? 'id' : 'slug'} = $1
+                id, title, provider, category, duration, fees, 
+                apply_link, description, is_active, created_at, updated_at
+            FROM courses
+            WHERE id = $1
         `;
 
         const result = await query(query_text, [id]);
@@ -163,10 +122,6 @@ exports.getCourseById = async (req, res) => {
             });
         }
 
-        // Increment view count (async, don't wait)
-        query('UPDATE courses SET views = views + 1 WHERE id = $1', [course.id])
-            .catch(err => logger.error('Failed to increment course view count:', err));
-
         res.json({
             success: true,
             data: course
@@ -180,48 +135,28 @@ exports.getCourseById = async (req, res) => {
     }
 };
 
-// Create new course (company/admin only)
+// Create new course
 exports.addCourse = async (req, res) => {
     try {
-        const providerId = req.companyId || req.body.providerId;
         const {
-            name,
+            title,
+            provider,
             description,
             category,
-            subcategory,
             duration,
-            durationWeeks,
-            mode,
-            feesStructure,
-            feesAmount,
-            eligibility,
-            syllabus,
-            certification,
-            applyLink,
-            startDate,
-            batchSize
+            fees,
+            apply_link
         } = req.body;
-
-        // Generate slug
-        const slug = name.toLowerCase()
-            .replace(/[^a-z0-9]+/g, '-')
-            .replace(/(^-|-$)/g, '') + '-' + Date.now();
 
         const result = await query(
             `INSERT INTO courses (
-                provider_id, name, slug, description, category, subcategory,
-                duration, duration_weeks, mode, fees_structure, fees_amount,
-                eligibility, syllabus, certification, apply_link, start_date, batch_size, is_active
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, true)
+                title, provider, description, category, duration, fees, apply_link, is_active
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, true)
             RETURNING *`,
-            [
-                providerId, name, slug, description, category, subcategory,
-                duration, durationWeeks, mode, feesStructure, feesAmount,
-                eligibility, syllabus, certification, applyLink, startDate, batchSize
-            ]
+            [title, provider, description, category, duration, fees, apply_link]
         );
 
-        logger.info(`Course created: ${name} by provider ${providerId}`);
+        logger.info(`Course created: ${title}`);
 
         res.status(201).json({
             success: true,
@@ -237,49 +172,30 @@ exports.addCourse = async (req, res) => {
     }
 };
 
-// Update course (provider or admin)
+// Update course
 exports.updateCourse = async (req, res) => {
     try {
         const { id } = req.params;
-        const providerId = req.companyId;
-        const isAdmin = req.user.role === 'admin';
-
-        // Check if course exists and belongs to provider (unless admin)
-        const checkResult = await query(
-            'SELECT provider_id FROM courses WHERE id = $1',
-            [id]
-        );
-
-        if (checkResult.rows.length === 0) {
-            return res.status(404).json({
-                success: false,
-                error: 'Course not found'
-            });
-        }
-
-        if (!isAdmin && checkResult.rows[0].provider_id !== providerId) {
-            return res.status(403).json({
-                success: false,
-                error: 'You do not have permission to update this course'
-            });
-        }
-
         const updates = req.body;
-        const allowedFields = [
-            'name', 'description', 'category', 'subcategory', 'duration',
-            'durationWeeks', 'mode', 'feesStructure', 'feesAmount',
-            'eligibility', 'syllabus', 'certification', 'applyLink',
-            'startDate', 'batchSize', 'isActive', 'isFeatured'
-        ];
 
         const setClause = [];
         const values = [];
         let paramIndex = 1;
 
+        const allowedFields = {
+            title: 'title',
+            provider: 'provider',
+            description: 'description',
+            category: 'category',
+            duration: 'duration',
+            fees: 'fees',
+            apply_link: 'apply_link',
+            is_active: 'is_active'
+        };
+
         for (const [key, value] of Object.entries(updates)) {
-            const dbField = key.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
-            if (allowedFields.includes(key)) {
-                setClause.push(`${dbField} = $${paramIndex}`);
+            if (allowedFields[key]) {
+                setClause.push(`${allowedFields[key]} = $${paramIndex}`);
                 values.push(value);
                 paramIndex++;
             }
@@ -302,7 +218,14 @@ exports.updateCourse = async (req, res) => {
             values
         );
 
-        logger.info(`Course updated: ${id} by ${req.user.email}`);
+        if (result.rows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                error: 'Course not found'
+            });
+        }
+
+        logger.info(`Course updated: ${id}`);
 
         res.json({
             success: true,
@@ -318,36 +241,21 @@ exports.updateCourse = async (req, res) => {
     }
 };
 
-// Delete course (provider or admin)
+// Delete course
 exports.deleteCourse = async (req, res) => {
     try {
         const { id } = req.params;
-        const providerId = req.companyId;
-        const isAdmin = req.user.role === 'admin';
 
-        // Check ownership
-        const checkResult = await query(
-            'SELECT provider_id FROM courses WHERE id = $1',
-            [id]
-        );
+        const result = await query('DELETE FROM courses WHERE id = $1 RETURNING id', [id]);
 
-        if (checkResult.rows.length === 0) {
+        if (result.rows.length === 0) {
             return res.status(404).json({
                 success: false,
                 error: 'Course not found'
             });
         }
 
-        if (!isAdmin && checkResult.rows[0].provider_id !== providerId) {
-            return res.status(403).json({
-                success: false,
-                error: 'You do not have permission to delete this course'
-            });
-        }
-
-        await query('DELETE FROM courses WHERE id = $1', [id]);
-
-        logger.info(`Course deleted: ${id} by ${req.user.email}`);
+        logger.info(`Course deleted: ${id}`);
 
         res.json({
             success: true,
@@ -389,19 +297,16 @@ exports.getCategories = async (req, res) => {
 // Get featured courses
 exports.getFeaturedCourses = async (req, res) => {
     try {
+        // Since there's no is_featured column, return recent courses as featured
         const { limit = 6 } = req.query;
 
         const result = await query(`
             SELECT 
-                c.*,
-                p.company_name as provider_name,
-                p.company_slug as provider_slug,
-                p.logo_url as provider_logo
-            FROM courses c
-            LEFT JOIN company_profiles p ON c.provider_id = p.id
-            WHERE c.is_active = true
-            AND c.is_featured = true
-            ORDER BY c.created_at DESC
+                id, title, provider, category, duration, fees, 
+                apply_link, description
+            FROM courses
+            WHERE is_active = true
+            ORDER BY created_at DESC
             LIMIT $1
         `, [parseInt(limit)]);
 
@@ -418,7 +323,7 @@ exports.getFeaturedCourses = async (req, res) => {
     }
 };
 
-// Search courses with full-text search
+// Search courses
 exports.searchCourses = async (req, res) => {
     try {
         const { q, page = 1, limit = 20 } = req.query;
@@ -432,30 +337,24 @@ exports.searchCourses = async (req, res) => {
 
         const searchQuery = `
             SELECT 
-                c.*,
-                p.company_name as provider_name,
-                p.company_slug as provider_slug,
-                p.logo_url as provider_logo,
-                ts_rank(to_tsvector('english', c.name || ' ' || COALESCE(c.description, '')), 
-                        plainto_tsquery('english', $1)) as relevance
-            FROM courses c
-            LEFT JOIN company_profiles p ON c.provider_id = p.id
-            WHERE c.is_active = true
-            AND to_tsvector('english', c.name || ' ' || COALESCE(c.description, '')) @@ plainto_tsquery('english', $1)
-            ORDER BY relevance DESC, c.created_at DESC
+                id, title, provider, category, duration, fees, 
+                apply_link, description
+            FROM courses
+            WHERE is_active = true
+            AND (title ILIKE $1 OR description ILIKE $1 OR provider ILIKE $1)
+            ORDER BY created_at DESC
             LIMIT $2 OFFSET $3
         `;
 
         const offset = (parseInt(page) - 1) * parseInt(limit);
-        const result = await query(searchQuery, [q, parseInt(limit), offset]);
+        const result = await query(searchQuery, [`%${q}%`, parseInt(limit), offset]);
 
-        // Get total count
         const countResult = await query(`
             SELECT COUNT(*)
-            FROM courses c
-            WHERE c.is_active = true
-            AND to_tsvector('english', c.name || ' ' || COALESCE(c.description, '')) @@ plainto_tsquery('english', $1)
-        `, [q]);
+            FROM courses
+            WHERE is_active = true
+            AND (title ILIKE $1 OR description ILIKE $1 OR provider ILIKE $1)
+        `, [`%${q}%`]);
 
         res.json({
             success: true,
@@ -484,7 +383,7 @@ exports.getSimilarCourses = async (req, res) => {
 
         // Get course details first
         const courseResult = await query(
-            'SELECT category, subcategory FROM courses WHERE id = $1',
+            'SELECT category, provider FROM courses WHERE id = $1',
             [id]
         );
 
@@ -495,25 +394,19 @@ exports.getSimilarCourses = async (req, res) => {
             });
         }
 
-        const { category, subcategory } = courseResult.rows[0];
+        const { category, provider } = courseResult.rows[0];
 
         const result = await query(`
             SELECT 
-                c.*,
-                p.company_name as provider_name,
-                p.company_slug as provider_slug,
-                p.logo_url as provider_logo
-            FROM courses c
-            LEFT JOIN company_profiles p ON c.provider_id = p.id
-            WHERE c.id != $1
-            AND c.is_active = true
-            AND (c.category = $2 OR c.subcategory = $3)
-            ORDER BY 
-                CASE WHEN c.category = $2 THEN 1 ELSE 0 END DESC,
-                c.rating DESC,
-                c.created_at DESC
+                id, title, provider, category, duration, fees, 
+                apply_link, description
+            FROM courses
+            WHERE id != $1
+            AND is_active = true
+            AND (category = $2 OR provider = $3)
+            ORDER BY created_at DESC
             LIMIT $4
-        `, [id, category, subcategory, parseInt(limit)]);
+        `, [id, category, provider, parseInt(limit)]);
 
         res.json({
             success: true,

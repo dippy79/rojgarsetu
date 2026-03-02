@@ -63,9 +63,12 @@ const jobPostLimiter = rateLimit({
     standardHeaders: true,
     legacyHeaders: false,
     keyGenerator: (req) => req.user?.id || req.ip, // Use user ID if available
-    handler: (req, res, next, options) => {
+    handler: (req, res) => {
         logger.warn(`Job post rate limit exceeded for user: ${req.user?.id || req.ip}`);
-        res.status(429).json(options.message);
+        res.status(429).json({
+            success: false,
+            error: 'Job posting limit reached, please try again later'
+        });
     }
 });
 

@@ -1,15 +1,31 @@
-// frontend/lib/api.js - API utilities for frontend
+// frontend/lib/api.js - API utilities for frontend with retry logic
 import axios from 'axios';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:5000';
+// Get API base URL - prioritize environment variable
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || 
+                 (typeof window !== 'undefined' ? window.location.origin.replace(':3000', ':5000') : 'http://localhost:5000');
+
+console.log('API Base URL:', API_BASE);
 
 // Create axios instance with default config
 const api = axios.create({
     baseURL: API_BASE,
     headers: {
         'Content-Type': 'application/json'
-    }
+    },
+    timeout: 15000 // 15 second timeout
 });
+
+// Retry logic configuration
+const retryConfig = {
+    retries: 2,
+    retryDelay: (retryCount) => retryCount * 1000,
+    retryCondition: (error) => {
+        return axios.isAxiosError(error) && 
+               !error.response && 
+               (error.code === 'ECONNABORTED' || error.code === 'ERR_NETWORK');
+    }
+};
 
 // Add token to requests if available
 api.interceptors.request.use((config) => {
@@ -33,12 +49,41 @@ api.interceptors.response.use(
                 window.location.href = '/login';
             }
         }
+        
+        // Log error for debugging
+        console.error('API Error:', error.message, error.config?.url);
+        
         return Promise.reject(error);
     }
 );
 
-// Basic fetcher for SWR
-export const fetcher = (url) => api.get(url).then(r => r.data);
+// Retry axios request wrapper
+const axiosWithRetry = async (config, retries = 2) => {
+    for (let i = 0; i < retries; i++) {
+        try {
+            return await api(config);
+        } catch (error) {
+            if (i === retries - 1) throw error;
+            if (retryConfig.retryCondition(error)) {
+                await new Promise(resolve => setTimeout(resolve, retryConfig.retryDelay(i + 1)));
+                console.log(`Retrying request to ${config.url}...`);
+            } else {
+                throw error;
+            }
+        }
+    }
+};
+
+// Basic fetcher for SWR with retry
+export const fetcher = async (url) => {
+    try {
+        const response = await axiosWithRetry({ url }, retryConfig.retries);
+        return response.data;
+    } catch (error) {
+        console.error('Fetcher error for', url, error.message);
+        throw error;
+    }
+};
 
 // Auth API
 export const authAPI = {
@@ -63,6 +108,12 @@ export const jobsAPI = {
     
     // Get featured jobs
     getFeaturedJobs: (limit = 5) => api.get('/api/jobs/featured', { params: { limit } }),
+    
+    // Get government jobs
+    getGovernmentJobs: (params) => api.get('/api/jobs/government', { params }),
+    
+    // Get private jobs
+    getPrivateJobs: (params) => api.get('/api/jobs/private', { params }),
     
     // Get job categories
     getCategories: () => api.get('/api/jobs/categories'),

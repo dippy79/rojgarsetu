@@ -29,6 +29,9 @@ const {
 // Import crawler
 const { scrapeGovJobs } = require('./crawler/jobCrawler');
 
+// Import job fetcher service
+const { fetchAllJobsAndCourses, seedIfEmpty, getStats } = require('./services/jobFetcher');
+
 const app = express();
 const PORT = process.env.PORT || 5000;
 
@@ -56,19 +59,36 @@ app.use((req, res, next) => {
     next();
 });
 
-// Health check endpoint with database connectivity
+// Health check endpoint with database connectivity and stats
 app.get('/health', async (req, res) => {
     const healthCheck = {
         status: 'ok',
         timestamp: new Date().toISOString(),
         uptime: process.uptime(),
-        database: 'unknown'
+        database: 'unknown',
+        stats: {
+            jobs: 0,
+            courses: 0
+        }
     };
     
     try {
         // Test database connection with a simple query
         await query('SELECT 1 as health');
         healthCheck.database = 'connected';
+        
+        // Get stats
+        try {
+            const stats = await getStats();
+            healthCheck.stats = {
+                totalJobs: stats.totalJobs,
+                governmentJobs: stats.governmentJobs,
+                privateJobs: stats.privateJobs,
+                totalCourses: stats.totalCourses
+            };
+        } catch (statsErr) {
+            logger.warn('Could not fetch stats:', statsErr.message);
+        }
         
         res.status(200).json(healthCheck);
     } catch (err) {
@@ -107,14 +127,24 @@ app.get('/', (req, res) => {
     });
 });
 
-// Test database connection
+// Test database connection with stats
 app.get('/api/test-db', async (req, res) => {
     try {
         const result = await query('SELECT NOW() as db_time, version() as pg_version');
+        
+        // Get stats
+        let stats = { totalJobs: 0, totalCourses: 0 };
+        try {
+            stats = await getStats();
+        } catch (e) {
+            // Ignore stats error
+        }
+        
         res.json({ 
             success: true,
             dbTime: result.rows[0].db_time,
-            pgVersion: result.rows[0].pg_version
+            pgVersion: result.rows[0].pg_version,
+            stats: stats
         });
     } catch (err) {
         logger.error('Database connection test failed:', err);
@@ -135,6 +165,18 @@ cron.schedule('0 8 * * *', async () => {
         logger.info('Job crawler finished successfully');
     } catch (err) {
         logger.error('Job crawler failed:', err);
+    }
+});
+
+// Every 6 hours: Fetch jobs and courses
+// Runs at: 12 AM, 6 AM, 12 PM, 6 PM
+cron.schedule('0 */6 * * *', async () => {
+    logger.info('Running scheduled job & course fetch...');
+    try {
+        const result = await fetchAllJobsAndCourses();
+        logger.info(`Scheduled fetch completed: ${result.totalInserted} new records inserted`);
+    } catch (err) {
+        logger.error('Scheduled job fetch failed:', err);
     }
 });
 
@@ -174,29 +216,62 @@ app.use(errorHandler);
 const startServer = async () => {
     try {
         // Test database connection before starting server
-        console.log('\n=== Testing Database Connection ===');
+        console.log('\n=== RojgarSetu Server Starting ===');
+        console.log('=================================');
         const dbTest = await testConnection();
         
         if (dbTest.success) {
-            console.log('=== Database Connection Successful ===\n');
+            console.log('✓ Database connected successfully');
+            
+            // Seed data if database is empty
+            console.log('\n--- Checking for seed data ---');
+            try {
+                const seedResult = await seedIfEmpty();
+                if (seedResult && seedResult.seeded !== false) {
+                    console.log(`✓ Seed data inserted: ${seedResult.totalInserted} new records`);
+                    console.log(`  - Government Jobs: ${seedResult.governmentJobs.inserted}`);
+                    console.log(`  - Private Jobs: ${seedResult.privateJobs.inserted}`);
+                    console.log(`  - Courses: ${seedResult.courses.inserted}`);
+                } else {
+                    console.log('✓ Database already has data, skipping seed');
+                }
+                
+                // Get and display stats
+                const stats = await getStats();
+                console.log('\n--- Database Stats ---');
+                console.log(`  Total Jobs: ${stats.totalJobs}`);
+                console.log(`  Government Jobs: ${stats.governmentJobs}`);
+                console.log(`  Private Jobs: ${stats.privateJobs}`);
+                console.log(`  Total Courses: ${stats.totalCourses}`);
+                console.log('=====================\n');
+            } catch (seedErr) {
+                console.error('Seed data error:', seedErr.message);
+            }
         } else {
-            console.log('=== WARNING: Database Connection Failed ===');
-            console.log('Server will start in degraded mode (database features may not work)');
+            console.log('⚠ WARNING: Database Connection Failed');
+            console.log('Server will start in degraded mode');
             console.log(`Error: ${dbTest.error}\n`);
         }
 
         // Start the server
         app.listen(PORT, () => {
-            logger.info(`Server running on http://localhost:${PORT}`);
-            logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
-            logger.info(`Database: ${dbTest.success ? 'connected' : 'disconnected (degraded mode)'}`);
+            console.log(`✓ Server running on http://localhost:${PORT}`);
+            console.log(`✓ Environment: ${process.env.NODE_ENV || 'development'}`);
+            console.log(`✓ Database: ${dbTest.success ? 'connected' : 'disconnected (degraded mode)'}`);
+            console.log('\n=== API Endpoints ===');
+            console.log(`  GET /health - Health check with stats`);
+            console.log(`  GET /api/jobs - All jobs`);
+            console.log(`  GET /api/jobs/featured - Featured jobs`);
+            console.log(`  GET /api/jobs/government - Government jobs`);
+            console.log(`  GET /api/jobs/private - Private jobs`);
+            console.log(`  GET /api/courses - All courses`);
+            console.log('====================\n');
         });
     } catch (err) {
         console.error('Failed to start server:', err.message);
         // Start server in degraded mode even if DB test throws
         app.listen(PORT, () => {
-            logger.info(`Server running on http://localhost:${PORT} (degraded mode)`);
-            logger.error('Database unavailable');
+            console.log(`Server running on http://localhost:${PORT} (degraded mode)`);
         });
     }
 };
