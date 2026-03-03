@@ -1,30 +1,55 @@
-// frontend/pages/jobs/index.js - Jobs listing page with filters
+// frontend/pages/jobs/index.js - Jobs listing page with dark glassmorphism design
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import useSWR from 'swr';
+import { motion, AnimatePresence } from 'framer-motion';
 import { jobsAPI } from '../../lib/api';
+import { theme, getBadgeColor } from '../../styles/theme';
+
+// Animation variants
+const fadeInUp = {
+    hidden: { opacity: 0, y: 20 },
+    visible: { opacity: 1, y: 0 }
+};
+
+const staggerContainer = {
+    hidden: { opacity: 0 },
+    visible: {
+        opacity: 1,
+        transition: { staggerChildren: 0.1 }
+    }
+};
+
+const cardVariants = {
+    hidden: { opacity: 0, y: 20 },
+    visible: { 
+        opacity: 1, 
+        y: 0,
+        transition: { duration: 0.4, ease: "easeOut" }
+    },
+    hover: { 
+        y: -6,
+        transition: { duration: 0.2 }
+    }
+};
 
 // Loading skeleton component
 function JobCardSkeleton() {
     return (
-        <div className="job-card-skeleton">
-            <div className="skeleton-title"></div>
-            <div className="skeleton-company"></div>
-            <div className="skeleton-details">
-                <div className="skeleton-tag"></div>
-                <div className="skeleton-tag"></div>
-                <div className="skeleton-tag"></div>
-            </div>
-            <div className="skeleton-footer">
-                <div className="skeleton-date"></div>
-                <div className="skeleton-btn"></div>
-            </div>
+        <div className="job-card">
+            <div className="skeleton" style={{ width: '80px', height: '24px', marginBottom: '16px' }} />
+            <div className="skeleton" style={{ width: '100%', height: '24px', marginBottom: '8px' }} />
+            <div className="skeleton" style={{ width: '60%', height: '16px', marginBottom: '16px' }} />
+            <div className="skeleton" style={{ width: '100%', height: '40px', marginBottom: '16px' }} />
+            <div className="skeleton" style={{ width: '120px', height: '40px' }} />
         </div>
     );
 }
 
-// Job card component
-function JobCard({ job }) {
+// Job card component with glassmorphism
+function JobCard({ job, index }) {
+    const badgeColor = getBadgeColor(job.category);
+    
     const formatDate = (dateStr) => {
         if (!dateStr) return '';
         const date = new Date(dateStr);
@@ -41,61 +66,113 @@ function JobCard({ job }) {
     };
 
     const daysLeft = getDaysLeft(job.last_date);
+    const isExpired = daysLeft !== null && daysLeft <= 0;
 
     return (
-        <div className="job-card">
+        <motion.div 
+            className="job-card"
+            variants={cardVariants}
+            initial="hidden"
+            animate="visible"
+            whileHover="hover"
+            transition={{ delay: index * 0.1 }}
+        >
             <div className="job-card-header">
-                <h3 className="job-title">
-                    <Link href={`/jobs/${job.id}`}>{job.title}</Link>
-                </h3>
-                {job.is_featured && <span className="featured-badge">Featured</span>}
+                <span 
+                    className="badge" 
+                    style={{ 
+                        backgroundColor: `${badgeColor}20`, 
+                        color: badgeColor 
+                    }}
+                >
+                    {job.category}
+                </span>
+                {job.is_featured && (
+                    <span className="badge badge-featured">Featured</span>
+                )}
+                {job.is_government && (
+                    <span className="badge badge-government">Government</span>
+                )}
             </div>
             
-            <div className="job-company">
-                {job.company_name || job.source || 'RojgarSetu'}
-            </div>
+            <h3>
+                <Link href={`/jobs/${job.id}`}>
+                    {job.title}
+                </Link>
+            </h3>
+            
+            <p className="job-company">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+                    <polyline points="9,22 9,12 15,12 15,22"/>
+                </svg>
+                {job.organization || job.company || job.source || 'RojgarSetu'}
+            </p>
             
             <div className="job-meta">
-                <span className="meta-item">
-                    <i className="icon-location"></i>
+                <span>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
+                        <circle cx="12" cy="10" r="3"/>
+                    </svg>
                     {job.location || 'All India'}
                 </span>
-                <span className="meta-item">
-                    <i className="icon-briefcase"></i>
-                    {job.type === 'full-time' ? 'Full Time' : job.type === 'part-time' ? 'Part Time' : job.type || 'Full Time'}
-                </span>
-                <span className="meta-item">
-                    <i className="icon-graduation"></i>
-                    {job.experience_required || 'Freshers'}
-                </span>
+                {job.salary && (
+                    <span>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <line x1="12" y1="1" x2="12" y2="23"/>
+                            <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+                        </svg>
+                        {job.salary}
+                    </span>
+                )}
+                {job.type && (
+                    <span>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <rect x="2" y="7" width="20" height="14" rx="2" ry="2"/>
+                            <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>
+                        </svg>
+                        {job.type === 'full-time' ? 'Full Time' : job.type === 'part-time' ? 'Part Time' : job.type}
+                    </span>
+                )}
             </div>
             
-            <div className="job-tags">
-                {job.category && <span className="tag">{job.category}</span>}
-                {job.education_required && <span className="tag">{job.education_required}</span>}
-            </div>
+            {job.last_date && !isExpired && (
+                <p className="job-deadline" style={{ color: daysLeft < 7 ? '#EF4444' : daysLeft < 30 ? '#F59E0B' : '#10B981' }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <circle cx="12" cy="12" r="10"/>
+                        <polyline points="12,6 12,12 16,14"/>
+                    </svg>
+                    Apply by: {formatDate(job.last_date)} ({daysLeft} days left)
+                </p>
+            )}
             
-            <div className="job-card-footer">
-                <div className="job-deadline">
-                    {daysLeft !== null && (
-                        <span className={`days-left ${daysLeft < 7 ? 'urgent' : daysLeft < 30 ? 'warning' : ''}`}>
-                            {daysLeft > 0 ? `${daysLeft} days left` : 'Expired'}
-                        </span>
-                    )}
-                    <span className="last-date">Apply by: {formatDate(job.last_date)}</span>
-                </div>
-                <Link href={`/jobs/${job.id}`} className="apply-btn">
-                    View Details
-                </Link>
-            </div>
-        </div>
+            {isExpired && (
+                <p className="job-deadline expired">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <circle cx="12" cy="12" r="10"/>
+                        <line x1="15" y1="9" x2="9" y2="15"/>
+                        <line x1="9" y1="9" x2="15" y2="15"/>
+                    </svg>
+                    Expired
+                </p>
+            )}
+            
+            <Link href={`/jobs/${job.id}`} className="apply-link">
+                View Details
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <line x1="5" y1="12" x2="19" y2="12"/>
+                    <polyline points="12,5 19,12 12,19"/>
+                </svg>
+            </Link>
+        </motion.div>
     );
 }
 
-// Filter sidebar component
+// Filter sidebar component with glassmorphism
 function FilterSidebar({ filters, setFilters, categories, jobTypes }) {
     const handleChange = (key, value) => {
-        setFilters(prev => ({ ...prev, [key]: value }));
+        setFilters(prev => ({ ...prev, [key]: value, page: 1 }));
     };
 
     return (
@@ -120,7 +197,7 @@ function FilterSidebar({ filters, setFilters, categories, jobTypes }) {
                 >
                     <option value="">All Categories</option>
                     {categories?.map(cat => (
-                        <option key={cat} value={cat}>{cat}</option>
+                        <option key={cat.category} value={cat.category}>{cat.category} ({cat.count})</option>
                     ))}
                 </select>
             </div>
@@ -152,23 +229,6 @@ function FilterSidebar({ filters, setFilters, categories, jobTypes }) {
                 />
             </div>
 
-            <div className="filter-section">
-                <h4>Experience</h4>
-                <select
-                    value={filters.experience}
-                    onChange={(e) => handleChange('experience', e.target.value)}
-                    className="filter-select"
-                >
-                    <option value="">Any Experience</option>
-                    <option value="0-1">0-1 Years</option>
-                    <option value="1-3">1-3 Years</option>
-                    <option value="3-5">3-5 Years</option>
-                    <option value="5-10">5-10 Years</option>
-                    <option value="10+">10+ Years</option>
-                    <option value="freshers">Freshers Only</option>
-                </select>
-            </div>
-
             <button 
                 className="clear-filters-btn"
                 onClick={() => setFilters({
@@ -176,7 +236,6 @@ function FilterSidebar({ filters, setFilters, categories, jobTypes }) {
                     category: '',
                     type: '',
                     location: '',
-                    experience: '',
                     page: 1
                 })}
             >
@@ -186,6 +245,9 @@ function FilterSidebar({ filters, setFilters, categories, jobTypes }) {
     );
 }
 
+// Fetcher function
+const fetcher = (url) => fetch(url).then((res) => res.json());
+
 // Main Jobs page component
 export default function JobsPage() {
     const [filters, setFilters] = useState({
@@ -193,36 +255,23 @@ export default function JobsPage() {
         category: '',
         type: '',
         location: '',
-        experience: '',
         page: 1,
-        limit: 10
+        limit: 12
     });
 
     // Build query string from filters
-    const buildQueryString = () => {
-        const params = new URLSearchParams();
-        if (filters.search) params.append('q', filters.search);
-        if (filters.category) params.append('category', filters.category);
-        if (filters.type) params.append('type', filters.type);
-        if (filters.location) params.append('location', filters.location);
-        if (filters.experience) params.append('experience', filters.experience);
-        params.append('page', filters.page);
-        params.append('limit', filters.limit);
-        return params.toString();
-    };
+    const queryParams = new URLSearchParams();
+    if (filters.search) queryParams.append('search', filters.search);
+    if (filters.category) queryParams.append('category', filters.category);
+    if (filters.type) queryParams.append('type', filters.type);
+    if (filters.location) queryParams.append('location', filters.location);
+    queryParams.append('page', filters.page);
+    queryParams.append('limit', filters.limit);
 
     // Fetch jobs with filters
     const { data: jobsData, error: jobsError, isLoading } = useSWR(
-        `/api/jobs?${buildQueryString()}`,
-        (url) => jobsAPI.getJobs({ 
-            q: filters.search || undefined,
-            category: filters.category || undefined,
-            type: filters.type || undefined,
-            location: filters.location || undefined,
-            experience: filters.experience || undefined,
-            page: filters.page,
-            limit: filters.limit
-        }).then(res => res.data),
+        `/api/jobs?${queryParams.toString()}`,
+        fetcher,
         { 
             revalidateOnFocus: false,
             dedupingInterval: 5000
@@ -232,13 +281,13 @@ export default function JobsPage() {
     // Fetch categories
     const { data: categoriesData } = useSWR(
         '/api/jobs/categories',
-        () => jobsAPI.getCategories().then(res => res.data),
+        fetcher,
         { revalidateOnFocus: false }
     );
 
-    const categories = categoriesData?.categories || [];
-    const jobs = jobsData?.jobs || [];
-    const pagination = jobsData?.pagination || { page: 1, limit: 10, total: 0, totalPages: 0 };
+    const categories = categoriesData?.data || [];
+    const jobs = jobsData?.data || [];
+    const pagination = jobsData?.pagination || { page: 1, limit: 12, totalCount: 0, totalPages: 0 };
 
     const jobTypes = [
         { value: 'full-time', label: 'Full Time' },
@@ -254,6 +303,19 @@ export default function JobsPage() {
 
     return (
         <div className="jobs-page">
+            {/* Hero Section */}
+            <section className="hero-small">
+                <motion.div 
+                    className="hero-content"
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.5 }}
+                >
+                    <h1>Find Your Dream Job</h1>
+                    <p>Browse thousands of government and private job opportunities</p>
+                </motion.div>
+            </section>
+
             <div className="jobs-container">
                 <aside className="jobs-sidebar">
                     <FilterSidebar 
@@ -266,25 +328,39 @@ export default function JobsPage() {
                 
                 <main className="jobs-main">
                     <div className="jobs-header">
-                        <h1>Find Your Dream Job</h1>
-                        <p>{pagination.total} jobs available</p>
+                        <h2>{pagination.totalCount} jobs available</h2>
+                        <div className="results-info">
+                            Page {pagination.page} of {pagination.totalPages}
+                        </div>
                     </div>
 
                     {jobsError && (
-                        <div className="error-message">
-                            <p>Failed to load jobs. Please try again.</p>
+                        <div className="error-fallback">
+                            <h3>Unable to load jobs</h3>
+                            <p>Please try again later.</p>
                             <button onClick={() => window.location.reload()}>Retry</button>
                         </div>
                     )}
 
                     {isLoading ? (
-                        <div className="jobs-list">
-                            {[...Array(5)].map((_, i) => (
+                        <motion.div 
+                            className="jobs-grid"
+                            variants={staggerContainer}
+                            initial="hidden"
+                            animate="visible"
+                        >
+                            {[...Array(6)].map((_, i) => (
                                 <JobCardSkeleton key={i} />
                             ))}
-                        </div>
+                        </motion.div>
                     ) : jobs.length === 0 ? (
-                        <div className="no-jobs">
+                        <motion.div 
+                            className="empty-state"
+                            variants={fadeInUp}
+                            initial="hidden"
+                            animate="visible"
+                        >
+                            <div className="empty-state-icon">📭</div>
                             <h3>No jobs found</h3>
                             <p>Try adjusting your filters or search criteria</p>
                             <button 
@@ -293,23 +369,32 @@ export default function JobsPage() {
                                     category: '',
                                     type: '',
                                     location: '',
-                                    experience: '',
                                     page: 1
                                 })}
                             >
                                 Clear Filters
                             </button>
-                        </div>
+                        </motion.div>
                     ) : (
                         <>
-                            <div className="jobs-list">
-                                {jobs.map(job => (
-                                    <JobCard key={job.id} job={job} />
+                            <motion.div 
+                                className="jobs-grid"
+                                variants={staggerContainer}
+                                initial="hidden"
+                                animate="visible"
+                            >
+                                {jobs.map((job, index) => (
+                                    <JobCard key={job.id} job={job} index={index} />
                                 ))}
-                            </div>
+                            </motion.div>
 
                             {pagination.totalPages > 1 && (
-                                <div className="pagination">
+                                <motion.div 
+                                    className="pagination"
+                                    variants={fadeInUp}
+                                    initial="hidden"
+                                    animate="visible"
+                                >
                                     <button
                                         disabled={pagination.page <= 1}
                                         onClick={() => handlePageChange(pagination.page - 1)}
@@ -318,9 +403,29 @@ export default function JobsPage() {
                                         Previous
                                     </button>
                                     
-                                    <span className="page-info">
-                                        Page {pagination.page} of {pagination.totalPages}
-                                    </span>
+                                    <div className="page-numbers">
+                                        {Array.from({ length: Math.min(5, pagination.totalPages) }, (_, i) => {
+                                            let pageNum;
+                                            if (pagination.totalPages <= 5) {
+                                                pageNum = i + 1;
+                                            } else if (pagination.page <= 3) {
+                                                pageNum = i + 1;
+                                            } else if (pagination.page >= pagination.totalPages - 2) {
+                                                pageNum = pagination.totalPages - 4 + i;
+                                            } else {
+                                                pageNum = pagination.page - 2 + i;
+                                            }
+                                            return (
+                                                <button
+                                                    key={pageNum}
+                                                    className={`page-num ${pagination.page === pageNum ? 'active' : ''}`}
+                                                    onClick={() => handlePageChange(pageNum)}
+                                                >
+                                                    {pageNum}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
                                     
                                     <button
                                         disabled={pagination.page >= pagination.totalPages}
@@ -329,7 +434,7 @@ export default function JobsPage() {
                                     >
                                         Next
                                     </button>
-                                </div>
+                                </motion.div>
                             )}
                         </>
                     )}
@@ -339,16 +444,63 @@ export default function JobsPage() {
             <style jsx>{`
                 .jobs-page {
                     min-height: 100vh;
-                    background: #f3f4f6;
+                    background: var(--bg-primary);
+                }
+
+                .hero-small {
+                    padding: 80px 20px 40px;
+                    background: var(--gradient-hero);
+                    text-align: center;
+                    position: relative;
+                    overflow: hidden;
+                }
+
+                .hero-small::before {
+                    content: '';
+                    position: absolute;
+                    top: -50%;
+                    left: -50%;
+                    width: 200%;
+                    height: 200%;
+                    background: 
+                        radial-gradient(circle at 30% 30%, rgba(124, 58, 237, 0.15) 0%, transparent 40%),
+                        radial-gradient(circle at 70% 70%, rgba(20, 184, 166, 0.1) 0%, transparent 40%);
+                    animation: heroGlow 15s ease-in-out infinite;
+                }
+
+                @keyframes heroGlow {
+                    0%, 100% { transform: translate(0, 0) rotate(0deg); }
+                    50% { transform: translate(-5%, -5%) rotate(5deg); }
+                }
+
+                .hero-content {
+                    position: relative;
+                    z-index: 1;
+                    max-width: 600px;
+                    margin: 0 auto;
+                }
+
+                .hero-content h1 {
+                    font-size: 2.5rem;
+                    margin-bottom: 12px;
+                    background: linear-gradient(135deg, var(--text-primary) 0%, var(--color-primary-light) 100%);
+                    -webkit-background-clip: text;
+                    -webkit-text-fill-color: transparent;
+                    background-clip: text;
+                }
+
+                .hero-content p {
+                    color: var(--text-secondary);
+                    font-size: 1.125rem;
                 }
 
                 .jobs-container {
                     max-width: 1400px;
                     margin: 0 auto;
-                    padding: 20px;
+                    padding: 32px 20px;
                     display: grid;
-                    grid-template-columns: 280px 1fr;
-                    gap: 24px;
+                    grid-template-columns: 300px 1fr;
+                    gap: 32px;
                 }
 
                 @media (max-width: 1024px) {
@@ -359,7 +511,7 @@ export default function JobsPage() {
 
                 .jobs-sidebar {
                     position: sticky;
-                    top: 20px;
+                    top: 100px;
                     height: fit-content;
                 }
 
@@ -368,269 +520,30 @@ export default function JobsPage() {
                 }
 
                 .jobs-header {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
                     margin-bottom: 24px;
                 }
 
-                .jobs-header h1 {
-                    font-size: 28px;
-                    font-weight: 700;
-                    color: #1f2937;
-                    margin: 0 0 8px 0;
+                .jobs-header h2 {
+                    font-size: 1.5rem;
+                    color: var(--text-primary);
                 }
 
-                .jobs-header p {
-                    color: #6b7280;
-                    margin: 0;
+                .results-info {
+                    color: var(--text-secondary);
+                    font-size: 0.875rem;
                 }
 
-                .jobs-list {
-                    display: flex;
-                    flex-direction: column;
-                    gap: 16px;
-                }
-
-                .error-message, .no-jobs {
-                    text-align: center;
-                    padding: 48px 24px;
-                    background: white;
-                    border-radius: 12px;
-                    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-                }
-
-                .error-message button, .no-jobs button {
-                    margin-top: 16px;
-                    padding: 10px 24px;
-                    background: #4f46e5;
-                    color: white;
-                    border: none;
-                    border-radius: 6px;
-                    cursor: pointer;
-                    font-weight: 500;
-                }
-
-                .pagination {
-                    display: flex;
-                    justify-content: center;
-                    align-items: center;
-                    gap: 16px;
-                    margin-top: 32px;
-                    padding: 16px;
-                    background: white;
-                    border-radius: 8px;
-                }
-
-                .page-btn {
-                    padding: 8px 16px;
-                    background: #4f46e5;
-                    color: white;
-                    border: none;
-                    border-radius: 6px;
-                    cursor: pointer;
-                    transition: background 0.2s;
-                }
-
-                .page-btn:disabled {
-                    background: #d1d5db;
-                    cursor: not-allowed;
-                }
-
-                .page-btn:not(:disabled):hover {
-                    background: #4338ca;
-                }
-
-                .page-info {
-                    color: #6b7280;
-                    font-weight: 500;
-                }
-
-                /* Job Card Styles */
-                .job-card {
-                    background: white;
-                    border-radius: 12px;
-                    padding: 20px;
-                    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-                    transition: box-shadow 0.2s, transform 0.2s;
-                }
-
-                .job-card:hover {
-                    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-                    transform: translateY(-2px);
-                }
-
-                .job-card-header {
-                    display: flex;
-                    justify-content: space-between;
-                    align-items: flex-start;
-                    margin-bottom: 8px;
-                }
-
-                .job-title {
-                    margin: 0;
-                    font-size: 18px;
-                    font-weight: 600;
-                }
-
-                .job-title a {
-                    color: #1f2937;
-                    text-decoration: none;
-                }
-
-                .job-title a:hover {
-                    color: #4f46e5;
-                }
-
-                .featured-badge {
-                    background: #fef3c7;
-                    color: #d97706;
-                    padding: 4px 8px;
-                    border-radius: 4px;
-                    font-size: 12px;
-                    font-weight: 600;
-                }
-
-                .job-company {
-                    color: #6b7280;
-                    font-size: 14px;
-                    margin-bottom: 12px;
-                }
-
-                .job-meta {
-                    display: flex;
-                    flex-wrap: wrap;
-                    gap: 16px;
-                    margin-bottom: 12px;
-                    color: #6b7280;
-                    font-size: 14px;
-                }
-
-                .job-tags {
-                    display: flex;
-                    flex-wrap: wrap;
-                    gap: 8px;
-                    margin-bottom: 16px;
-                }
-
-                .tag {
-                    background: #e5e7eb;
-                    color: #4b5563;
-                    padding: 4px 10px;
-                    border-radius: 4px;
-                    font-size: 12px;
-                }
-
-                .job-card-footer {
-                    display: flex;
-                    justify-content: space-between;
-                    align-items: center;
-                    padding-top: 16px;
-                    border-top: 1px solid #e5e7eb;
-                }
-
-                .job-deadline {
-                    display: flex;
-                    flex-direction: column;
-                    gap: 4px;
-                }
-
-                .days-left {
-                    font-weight: 600;
-                    color: #059669;
-                }
-
-                .days-left.warning {
-                    color: #d97706;
-                }
-
-                .days-left.urgent {
-                    color: #dc2626;
-                }
-
-                .last-date {
-                    font-size: 12px;
-                    color: #9ca3af;
-                }
-
-                .apply-btn {
-                    background: #4f46e5;
-                    color: white;
-                    padding: 10px 20px;
-                    border-radius: 6px;
-                    text-decoration: none;
-                    font-weight: 500;
-                    transition: background 0.2s;
-                }
-
-                .apply-btn:hover {
-                    background: #4338ca;
-                }
-
-                /* Skeleton styles */
-                .job-card-skeleton {
-                    background: white;
-                    border-radius: 12px;
-                    padding: 20px;
-                    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-                }
-
-                .skeleton-title, .skeleton-company, .skeleton-tag, .skeleton-date, .skeleton-btn {
-                    background: linear-gradient(90deg, #e5e7eb 25%, #f3f4f6 50%, #e5e7eb 75%);
-                    background-size: 200% 100%;
-                    animation: skeleton-loading 1.5s infinite;
-                    border-radius: 4px;
-                }
-
-                .skeleton-title {
-                    height: 24px;
-                    width: 70%;
-                    margin-bottom: 12px;
-                }
-
-                .skeleton-company {
-                    height: 16px;
-                    width: 40%;
-                    margin-bottom: 16px;
-                }
-
-                .skeleton-details {
-                    display: flex;
-                    gap: 8px;
-                    margin-bottom: 16px;
-                }
-
-                .skeleton-tag {
-                    height: 24px;
-                    width: 80px;
-                }
-
-                .skeleton-footer {
-                    display: flex;
-                    justify-content: space-between;
-                    align-items: center;
-                    padding-top: 16px;
-                    border-top: 1px solid #e5e7eb;
-                }
-
-                .skeleton-date {
-                    height: 16px;
-                    width: 100px;
-                }
-
-                .skeleton-btn {
-                    height: 36px;
-                    width: 100px;
-                }
-
-                @keyframes skeleton-loading {
-                    0% { background-position: 200% 0; }
-                    100% { background-position: -200% 0; }
-                }
-
-                /* Filter Sidebar Styles */
+                /* Glassmorphism Filter Sidebar */
                 .filter-sidebar {
-                    background: white;
-                    border-radius: 12px;
-                    padding: 20px;
-                    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+                    background: var(--gradient-card);
+                    backdrop-filter: blur(12px);
+                    -webkit-backdrop-filter: blur(12px);
+                    border: 1px solid rgba(255, 255, 255, 0.06);
+                    border-radius: var(--radius-xl);
+                    padding: var(--space-lg);
                 }
 
                 .filter-section {
@@ -639,63 +552,371 @@ export default function JobsPage() {
 
                 .filter-section h4 {
                     margin: 0 0 12px 0;
-                    font-size: 14px;
+                    font-size: 0.875rem;
                     font-weight: 600;
-                    color: #374151;
+                    color: var(--text-primary);
                 }
 
                 .filter-input, .filter-select {
                     width: 100%;
-                    padding: 10px 12px;
-                    border: 1px solid #d1d5db;
-                    border-radius: 6px;
-                    font-size: 14px;
-                    transition: border-color 0.2s;
+                    padding: 12px 16px;
+                    background: var(--bg-secondary);
+                    border: 1px solid rgba(255, 255, 255, 0.1);
+                    border-radius: var(--radius-md);
+                    color: var(--text-primary);
+                    font-size: 0.875rem;
+                    transition: all var(--transition-fast);
                 }
 
                 .filter-input:focus, .filter-select:focus {
                     outline: none;
-                    border-color: #4f46e5;
+                    border-color: var(--color-primary);
+                    box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.1);
+                }
+
+                .filter-input::placeholder {
+                    color: var(--text-tertiary);
                 }
 
                 .filter-options {
                     display: flex;
                     flex-direction: column;
-                    gap: 8px;
+                    gap: 12px;
                 }
 
                 .filter-checkbox {
                     display: flex;
                     align-items: center;
-                    gap: 8px;
+                    gap: 10px;
                     cursor: pointer;
-                    font-size: 14px;
-                    color: #4b5563;
+                    font-size: 0.875rem;
+                    color: var(--text-secondary);
+                    transition: color var(--transition-fast);
+                }
+
+                .filter-checkbox:hover {
+                    color: var(--text-primary);
                 }
 
                 .filter-checkbox input {
-                    width: 16px;
-                    height: 16px;
-                    accent-color: #4f46e5;
+                    width: 18px;
+                    height: 18px;
+                    accent-color: var(--color-primary);
                 }
 
                 .clear-filters-btn {
                     width: 100%;
-                    padding: 10px;
+                    padding: 12px;
                     background: transparent;
-                    border: 1px solid #d1d5db;
-                    border-radius: 6px;
-                    color: #6b7280;
+                    border: 1px solid rgba(255, 255, 255, 0.1);
+                    border-radius: var(--radius-md);
+                    color: var(--text-secondary);
                     cursor: pointer;
-                    font-size: 14px;
-                    transition: all 0.2s;
+                    font-size: 0.875rem;
+                    font-weight: 500;
+                    transition: all var(--transition-fast);
                 }
 
                 .clear-filters-btn:hover {
-                    background: #f3f4f6;
-                    color: #374151;
+                    background: rgba(255, 255, 255, 0.05);
+                    color: var(--text-primary);
+                    border-color: var(--color-primary);
+                }
+
+                /* Jobs Grid */
+                .jobs-grid {
+                    display: grid;
+                    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+                    gap: 24px;
+                }
+
+                /* Job Card with Glassmorphism */
+                .job-card {
+                    background: var(--gradient-card);
+                    backdrop-filter: blur(12px);
+                    border: 1px solid rgba(255, 255, 255, 0.06);
+                    border-radius: var(--radius-xl);
+                    padding: var(--space-lg);
+                    transition: all var(--transition-normal);
+                    display: flex;
+                    flex-direction: column;
+                    height: 100%;
+                }
+
+                .job-card:hover {
+                    transform: translateY(-6px);
+                    box-shadow: var(--shadow-xl), 0 0 30px rgba(124, 58, 237, 0.15);
+                    border-color: rgba(124, 58, 237, 0.2);
+                }
+
+                .job-card-header {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: flex-start;
+                    margin-bottom: 16px;
+                    flex-wrap: wrap;
+                    gap: 8px;
+                }
+
+                .badge {
+                    display: inline-flex;
+                    align-items: center;
+                    padding: 4px 10px;
+                    font-size: 0.75rem;
+                    font-weight: 500;
+                    border-radius: var(--radius-full);
+                    background: rgba(124, 58, 237, 0.15);
+                    color: var(--color-primary-light);
+                }
+
+                .badge-featured {
+                    background: rgba(245, 158, 11, 0.15);
+                    color: #F59E0B;
+                }
+
+                .badge-government {
+                    background: rgba(167, 139, 250, 0.15);
+                    color: #A78BFA;
+                }
+
+                .job-card h3 {
+                    font-size: 1.125rem;
+                    margin-bottom: 8px;
+                    color: var(--text-primary);
+                }
+
+                .job-card h3 a {
+                    color: var(--text-primary);
+                    text-decoration: none;
+                    transition: color var(--transition-fast);
+                }
+
+                .job-card h3 a:hover {
+                    color: var(--color-primary-light);
+                }
+
+                .job-company {
+                    color: var(--text-secondary);
+                    font-size: 0.875rem;
+                    margin-bottom: 16px;
+                    display: flex;
+                    align-items: center;
+                    gap: 6px;
+                }
+
+                .job-meta {
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 16px;
+                    color: var(--text-tertiary);
+                    font-size: 0.8125rem;
+                    margin-bottom: 16px;
+                }
+
+                .job-meta span {
+                    display: flex;
+                    align-items: center;
+                    gap: 6px;
+                }
+
+                .job-deadline {
+                    display: flex;
+                    align-items: center;
+                    gap: 6px;
+                    font-size: 0.8125rem;
+                    margin-bottom: 16px;
+                    font-weight: 500;
+                }
+
+                .job-deadline.expired {
+                    color: var(--accent-error);
+                }
+
+                .apply-link {
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    gap: 8px;
+                    padding: 12px 24px;
+                    background: var(--gradient-primary);
+                    color: white;
+                    border-radius: var(--radius-md);
+                    font-weight: 500;
+                    font-size: 0.875rem;
+                    text-decoration: none;
+                    margin-top: auto;
+                    transition: all var(--transition-normal);
+                    box-shadow: var(--shadow-md);
+                }
+
+                .apply-link:hover {
+                    transform: translateY(-2px);
+                    box-shadow: var(--shadow-lg), var(--shadow-glow-primary);
+                    color: white;
+                }
+
+                /* Pagination */
+                .pagination {
+                    display: flex;
+                    justify-content: center;
+                    align-items: center;
+                    gap: 16px;
+                    margin-top: 40px;
+                    padding: 20px;
+                    background: var(--gradient-card);
+                    backdrop-filter: blur(12px);
+                    border-radius: var(--radius-xl);
+                    border: 1px solid rgba(255, 255, 255, 0.06);
+                }
+
+                .page-btn {
+                    padding: 10px 20px;
+                    background: var(--gradient-primary);
+                    color: white;
+                    border: none;
+                    border-radius: var(--radius-md);
+                    cursor: pointer;
+                    font-weight: 500;
+                    transition: all var(--transition-fast);
+                }
+
+                .page-btn:disabled {
+                    background: var(--bg-tertiary);
+                    color: var(--text-tertiary);
+                    cursor: not-allowed;
+                }
+
+                .page-btn:not(:disabled):hover {
+                    transform: translateY(-2px);
+                    box-shadow: var(--shadow-glow-primary);
+                }
+
+                .page-numbers {
+                    display: flex;
+                    gap: 8px;
+                }
+
+                .page-num {
+                    width: 40px;
+                    height: 40px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    background: var(--bg-secondary);
+                    border: 1px solid rgba(255, 255, 255, 0.1);
+                    border-radius: var(--radius-md);
+                    color: var(--text-secondary);
+                    cursor: pointer;
+                    transition: all var(--transition-fast);
+                }
+
+                .page-num:hover {
+                    background: rgba(124, 58, 237, 0.1);
+                    border-color: var(--color-primary);
+                    color: var(--text-primary);
+                }
+
+                .page-num.active {
+                    background: var(--gradient-primary);
+                    border-color: var(--color-primary);
+                    color: white;
+                }
+
+                /* Empty State */
+                .empty-state {
+                    text-align: center;
+                    padding: 80px 24px;
+                    background: var(--gradient-card);
+                    backdrop-filter: blur(12px);
+                    border: 1px solid rgba(255, 255, 255, 0.06);
+                    border-radius: var(--radius-xl);
+                }
+
+                .empty-state-icon {
+                    font-size: 4rem;
+                    margin-bottom: 16px;
+                    opacity: 0.5;
+                }
+
+                .empty-state h3 {
+                    color: var(--text-secondary);
+                    margin-bottom: 8px;
+                }
+
+                .empty-state p {
+                    color: var(--text-tertiary);
+                    margin-bottom: 24px;
+                }
+
+                .empty-state button, .error-fallback button {
+                    padding: 12px 24px;
+                    background: var(--gradient-primary);
+                    color: white;
+                    border: none;
+                    border-radius: var(--radius-md);
+                    font-weight: 500;
+                    cursor: pointer;
+                    transition: all var(--transition-fast);
+                }
+
+                .empty-state button:hover {
+                    transform: translateY(-2px);
+                    box-shadow: var(--shadow-glow-primary);
+                }
+
+                /* Error Fallback */
+                .error-fallback {
+                    text-align: center;
+                    padding: 48px 24px;
+                    background: rgba(239, 68, 68, 0.1);
+                    border: 1px solid rgba(239, 68, 68, 0.2);
+                    border-radius: var(--radius-xl);
+                }
+
+                .error-fallback h3 {
+                    color: var(--accent-error);
+                    margin-bottom: 8px;
+                }
+
+                .error-fallback p {
+                    color: var(--text-secondary);
+                    margin-bottom: 16px;
+                }
+
+                /* Skeleton */
+                .skeleton {
+                    background: linear-gradient(90deg, 
+                        var(--bg-tertiary) 25%, 
+                        var(--bg-secondary) 50%, 
+                        var(--bg-tertiary) 75%
+                    );
+                    background-size: 200% 100%;
+                    animation: shimmer 1.5s infinite;
+                    border-radius: var(--radius-md);
+                }
+
+                @keyframes shimmer {
+                    0% { background-position: 200% 0; }
+                    100% { background-position: -200% 0; }
+                }
+
+                /* Responsive */
+                @media (max-width: 768px) {
+                    .hero-content h1 {
+                        font-size: 2rem;
+                    }
+
+                    .jobs-header {
+                        flex-direction: column;
+                        gap: 8px;
+                    }
+
+                    .jobs-grid {
+                        grid-template-columns: 1fr;
+                    }
                 }
             `}</style>
         </div>
     );
 }
+

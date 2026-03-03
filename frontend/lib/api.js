@@ -1,4 +1,4 @@
-// frontend/lib/api.js - API utilities for frontend with retry logic
+ // frontend/lib/api.js - API utilities for frontend with retry logic
 import axios from 'axios';
 
 // Get API base URL - prioritize environment variable
@@ -207,81 +207,140 @@ export const companiesAPI = {
         api.put(`/api/companies/${companyId}/applicants/${applicationId}`, { status })
 };
 
-// Applications API
-export const applicationsAPI = {
-    // Get all applications (admin/company)
-    getApplications: (params) => api.get('/api/applications', { params }),
-    
-    // Get single application
-    getApplication: (id) => api.get(`/api/applications/${id}`),
-    
-    // Update application status
-    updateApplication: (id, status, notes) => api.put(`/api/applications/${id}`, { status, notes })
-};
-
 // Notifications API
 export const notificationsAPI = {
-    // Get my notifications
     getNotifications: (params) => api.get('/api/notifications', { params }),
-    
-    // Mark notification as read
     markAsRead: (id) => api.put(`/api/notifications/${id}/read`),
-    
-    // Mark all as read
     markAllAsRead: () => api.put('/api/notifications/read-all'),
-    
-    // Delete notification
     deleteNotification: (id) => api.delete(`/api/notifications/${id}`),
-    
-    // Get unread count
     getUnreadCount: () => api.get('/api/notifications/unread-count'),
-    
-    // Get preferences
     getPreferences: () => api.get('/api/notifications/preferences'),
-    
-    // Update preferences
     updatePreferences: (data) => api.put('/api/notifications/preferences', data)
 };
 
 // Profile API
 export const profileAPI = {
-    // Get candidate profile
     getCandidateProfile: () => api.get('/api/profile/candidate'),
-    
-    // Update candidate profile
     updateCandidateProfile: (data) => api.put('/api/profile/candidate', data),
-    
-    // Get candidate dashboard
     getCandidateDashboard: () => api.get('/api/profile/candidate/dashboard'),
-    
-    // Get company profile
     getCompanyProfile: () => api.get('/api/profile/company'),
-    
-    // Update company profile
     updateCompanyProfile: (data) => api.put('/api/profile/company', data),
-    
-    // Get company dashboard
     getCompanyDashboard: () => api.get('/api/profile/company/dashboard')
+};
+
+// Applications API
+export const applicationsAPI = {
+    getApplications: (params) => api.get('/api/applications', { params }),
+    getApplication: (id) => api.get(`/api/applications/${id}`),
+    updateApplication: (id, status, notes) => api.put(`/api/applications/${id}`, { status, notes })
 };
 
 // Company Management API
 export const companyAPI = {
-    // Get company's jobs
     getCompanyJobs: (params) => api.get('/api/company/jobs', { params }),
-    
-    // Get applicants for a job
     getJobApplicants: (jobId, params) => api.get(`/api/company/jobs/${jobId}/applicants`, { params }),
-    
-    // Update applicant status
     updateApplicantStatus: (jobId, applicationId, data) => 
         api.put(`/api/company/jobs/${jobId}/applicants/${applicationId}`, data),
-    
-    // Bulk update applicants
     bulkUpdateApplicants: (jobId, data) => 
         api.post(`/api/company/jobs/${jobId}/applicants/bulk-update`, data),
-    
-    // Get company analytics
     getCompanyAnalytics: (params) => api.get('/api/company/analytics', { params })
+};
+
+// ============================================
+// PHASE 4 APIS
+// ============================================
+
+// Resumes API
+export const resumesAPI = {
+    // Get all resumes
+    getResumes: () => api.get('/api/resumes'),
+    
+    // Get single resume
+    getResume: (id) => api.get(`/api/resumes/${id}`),
+    
+    // Upload resume
+    uploadResume: (formData) => api.post('/api/resumes', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+    }),
+    
+    // Update resume
+    updateResume: (id, data) => api.put(`/api/resumes/${id}`, data),
+    
+    // Delete resume
+    deleteResume: (id) => api.delete(`/api/resumes/${id}`),
+    
+    // Download resume
+    downloadResume: (id) => api.get(`/api/resumes/${id}/download`, { responseType: 'blob' })
+};
+
+// Job Applications API (Phase 4)
+export const jobApplicationsAPI = {
+    // Get my applications
+    getMyApplications: (params) => api.get('/api/applications', { params }),
+    
+    // Get single application
+    getMyApplication: (id) => api.get(`/api/applications/${id}`),
+    
+    // Apply to job
+    applyToJob: (jobId, data) => api.post(`/api/applications/${jobId}`, data),
+    
+    // Withdraw application
+    withdrawApplication: (jobId) => api.delete(`/api/applications/${jobId}`),
+    
+    // Get job applications (company/admin)
+    getJobApplications: (jobId, params) => api.get(`/api/applications/job/${jobId}`, { params }),
+    
+    // Update application status
+    updateApplicationStatus: (applicationId, data) => 
+        api.put(`/api/applications/${applicationId}`, data),
+    
+    // Get application stats
+    getApplicationStats: () => api.get('/api/applications/stats/all')
+};
+
+// Admin API
+export const adminAPI = {
+    // Dashboard
+    getDashboardStats: () => api.get('/api/admin/dashboard'),
+    
+    // Users
+    getUsers: (params) => api.get('/api/admin/users', { params }),
+    getUser: (id) => api.get(`/api/admin/users/${id}`),
+    updateUser: (id, data) => api.put(`/api/admin/users/${id}`, data),
+    deleteUser: (id) => api.delete(`/api/admin/users/${id}`),
+    
+    // Jobs
+    getAllJobs: (params) => api.get('/api/admin/jobs', { params }),
+    updateJob: (id, data) => api.put(`/api/admin/jobs/${id}`, data),
+    deleteJob: (id) => api.delete(`/api/admin/jobs/${id}`),
+    
+    // Courses
+    getAllCourses: (params) => api.get('/api/admin/courses', { params }),
+    updateCourse: (id, data) => api.put(`/api/admin/courses/${id}`, data),
+    deleteCourse: (id) => api.delete(`/api/admin/courses/${id}`),
+    
+    // Admins (super admin)
+    getAdmins: (params) => api.get('/api/admin/admins', { params }),
+    createAdmin: (data) => api.post('/api/admin/admins', data),
+    updateAdmin: (id, data) => api.put(`/api/admin/admins/${id}`, data),
+    
+    // Audit logs (super admin)
+    getAuditLogs: (params) => api.get('/api/admin/audit-logs', { params })
+};
+
+// Recommendations API
+export const recommendationsAPI = {
+    // Get job recommendations
+    getRecommendations: (params) => api.get('/api/recommendations', { params }),
+    
+    // Update recommendation feedback
+    updateFeedback: (jobId, action) => api.put(`/api/recommendations/${jobId}/feedback`, { action }),
+    
+    // Get my recommendation analytics
+    getAnalytics: () => api.get('/api/recommendations/analytics'),
+    
+    // Get recommendation stats (admin)
+    getStats: () => api.get('/api/recommendations/stats')
 };
 
 export default api;

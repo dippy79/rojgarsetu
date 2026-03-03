@@ -1,6 +1,8 @@
 const express = require('express');
+console.log('[routes/jobs.js] About to create router');
 const router = express.Router();
-const { 
+console.log('[routes/jobs.js] Router created, loading controllers...');
+const {
     getJobs, 
     getJobById, 
     createJob, 

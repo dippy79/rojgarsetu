@@ -1,64 +1,131 @@
-// frontend/pages/notifications/index.js - Notifications Page
-import { useState } from 'react';
-import useSWR from 'swr';
+// frontend/pages/notifications/index.js - Notifications page with dark glassmorphism design
+import { useState, useEffect } from 'react';
+import Link from 'next/link';
+import useSWR, { mutate } from 'swr';
+import { motion } from 'framer-motion';
 import { notificationsAPI } from '../../lib/api';
 
-export default function Notifications() {
-    const [filter, setFilter] = useState('all');
-    const { data, error, mutate } = useSWR(
-        `/api/notifications?${filter === 'unread' ? 'unreadOnly=true' : ''}`,
-        () => notificationsAPI.getNotifications({ unreadOnly: filter === 'unread' ? true : undefined }).then(res => res.data),
+// Animation variants
+const fadeInUp = {
+    hidden: { opacity: 0, y: 20 },
+    visible: { opacity: 1, y: 0 }
+};
+
+const staggerContainer = {
+    hidden: { opacity: 0 },
+    visible: {
+        opacity: 1,
+        transition: { staggerChildren: 0.1 }
+    }
+};
+
+// Fetcher function
+const fetcher = (url) => fetch(url).then((res) => res.json());
+
+// Notification card component
+function NotificationCard({ notification, onMarkAsRead }) {
+    const getIcon = (type) => {
+        switch (type) {
+            case 'job_alert': return '💼';
+            case 'application': return '📝';
+            case 'interview': return '📅';
+            case 'system': return '🔔';
+            default: return '🔔';
+        }
+    };
+
+    const getTimeAgo = (dateStr) => {
+        if (!dateStr) return '';
+        const date = new Date(dateStr);
+        const now = new Date();
+        const diffMs = now - date;
+        const diffMins = Math.floor(diffMs / 60000);
+        const diffHours = Math.floor(diffMs / 3600000);
+        const diffDays = Math.floor(diffMs / 86400000);
+
+        if (diffMins < 60) return `${diffMins}m ago`;
+        if (diffHours < 24) return `${diffHours}h ago`;
+        if (diffDays < 7) return `${diffDays}d ago`;
+        return date.toLocaleDateString();
+    };
+
+    return (
+        <motion.div 
+            className={`notification-card ${notification.is_read ? 'read' : 'unread'}`}
+            variants={fadeInUp}
+            initial="hidden"
+            animate="visible"
+            onClick={() => !notification.is_read && onMarkAsRead(notification.id)}
+        >
+            <div className="notification-icon">
+                {getIcon(notification.type)}
+            </div>
+            <div className="notification-content">
+                <h4>{notification.title}</h4>
+                <p>{notification.message}</p>
+                <span className="notification-time">{getTimeAgo(notification.created_at)}</span>
+            </div>
+            {!notification.is_read && <div className="unread-dot" />}
+        </motion.div>
+    );
+}
+
+export default function NotificationsPage() {
+    // Fetch notifications
+    const { data: notificationsData, error, isLoading, mutate: mutateNotifications } = useSWR(
+        '/api/notifications',
+        fetcher,
         { revalidateOnFocus: false }
     );
+
+    // Fetch unread count
+    const { data: unreadData } = useSWR(
+        '/api/notifications/unread-count',
+        fetcher,
+        { revalidateOnFocus: false }
+    );
+
+    const notifications = notificationsData?.data || [];
+    const unreadCount = unreadData?.data?.unread_count || 0;
 
     const handleMarkAsRead = async (id) => {
         try {
             await notificationsAPI.markAsRead(id);
-            mutate();
+            mutateNotifications();
         } catch (err) {
-            console.error('Failed to mark as read:', err);
+            console.error('Failed to mark notification as read:', err);
         }
     };
 
     const handleMarkAllAsRead = async () => {
         try {
             await notificationsAPI.markAllAsRead();
-            mutate();
+            mutateNotifications();
         } catch (err) {
             console.error('Failed to mark all as read:', err);
         }
     };
 
-    const handleDelete = async (id) => {
-        try {
-            await notificationsAPI.deleteNotification(id);
-            mutate();
-        } catch (err) {
-            console.error('Failed to delete notification:', err);
-        }
-    };
-
-    const notifications = data?.data?.notifications || [];
-    const unreadCount = data?.data?.unreadCount || 0;
-
-    const getNotificationIcon = (type) => {
-        switch (type) {
-            case 'application_update': return '📋';
-            case 'new_application': return '👤';
-            case 'job_alert': return '🔔';
-            case 'deadline': return '⏰';
-            default: return '📢';
-        }
-    };
-
     return (
         <div className="notifications-page">
-            {/* Header */}
-            <div className="page-header">
-                <div className="header-content">
-                    <div>
-                        <h1>Notifications</h1>
-                        <p>{unreadCount} unread notification{unreadCount !== 1 ? 's' : ''}</p>
+            {/* Hero Section */}
+            <section className="hero-small">
+                <motion.div 
+                    className="hero-content"
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.5 }}
+                >
+                    <h1>Notifications</h1>
+                    <p>Stay updated with your job applications and new opportunities</p>
+                </motion.div>
+            </section>
+
+            <div className="notifications-container">
+                {/* Header with actions */}
+                <div className="notifications-header">
+                    <div className="unread-badge">
+                        {unreadCount > 0 ? `${unreadCount} unread` : 'All caught up!'}
                     </div>
                     {unreadCount > 0 && (
                         <button className="mark-all-btn" onClick={handleMarkAllAsRead}>
@@ -66,161 +133,150 @@ export default function Notifications() {
                         </button>
                     )}
                 </div>
-            </div>
 
-            {/* Filters */}
-            <div className="filters">
-                <button
-                    className={`filter-btn ${filter === 'all' ? 'active' : ''}`}
-                    onClick={() => setFilter('all')}
-                >
-                    All
-                </button>
-                <button
-                    className={`filter-btn ${filter === 'unread' ? 'active' : ''}`}
-                    onClick={() => setFilter('unread')}
-                >
-                    Unread {unreadCount > 0 && <span className="badge">{unreadCount}</span>}
-                </button>
-            </div>
+                {error && (
+                    <div className="error-fallback">
+                        <h3>Unable to load notifications</h3>
+                        <p>Please try again later.</p>
+                        <button onClick={() => window.location.reload()}>Retry</button>
+                    </div>
+                )}
 
-            {/* Notifications List */}
-            <div className="notifications-list">
-                {error ? (
-                    <div className="error-message">
-                        Failed to load notifications. Please try again.
-                    </div>
-                ) : !data ? (
-                    <div className="loading">Loading notifications...</div>
-                ) : notifications.length === 0 ? (
-                    <div className="empty-state">
-                        <div className="empty-icon">🔔</div>
-                        <h3>No notifications</h3>
-                        <p>You're all caught up!</p>
-                    </div>
-                ) : (
-                    notifications.map(notification => (
-                        <div 
-                            key={notification.id} 
-                            className={`notification-card ${notification.is_read ? 'read' : 'unread'}`}
-                        >
-                            <div className="notification-icon">
-                                {getNotificationIcon(notification.type)}
-                            </div>
-                            <div className="notification-content">
-                                <div className="notification-title">{notification.title}</div>
-                                <div className="notification-message">{notification.message}</div>
-                                <div className="notification-time">
-                                    {new Date(notification.created_at).toLocaleString()}
+                {isLoading ? (
+                    <div className="notifications-list">
+                        {[...Array(5)].map((_, i) => (
+                            <div key={i} className="notification-skeleton">
+                                <div className="skeleton" style={{ width: '40px', height: '40px', borderRadius: '50%' }} />
+                                <div style={{ flex: 1 }}>
+                                    <div className="skeleton" style={{ width: '60%', height: '20px', marginBottom: '8px' }} />
+                                    <div className="skeleton" style={{ width: '80%', height: '16px', marginBottom: '8px' }} />
+                                    <div className="skeleton" style={{ width: '30%', height: '12px' }} />
                                 </div>
                             </div>
-                            <div className="notification-actions">
-                                {!notification.is_read && (
-                                    <button 
-                                        className="action-btn mark-read"
-                                        onClick={() => handleMarkAsRead(notification.id)}
-                                    >
-                                        Mark read
-                                    </button>
-                                )}
-                                <button 
-                                    className="action-btn delete"
-                                    onClick={() => handleDelete(notification.id)}
-                                >
-                                    Delete
-                                </button>
-                            </div>
-                        </div>
-                    ))
+                        ))}
+                    </div>
+                ) : notifications.length === 0 ? (
+                    <motion.div 
+                        className="empty-state"
+                        variants={fadeInUp}
+                        initial="hidden"
+                        animate="visible"
+                    >
+                        <div className="empty-state-icon">🔔</div>
+                        <h3>No notifications yet</h3>
+                        <p>We'll notify you when there are updates</p>
+                    </motion.div>
+                ) : (
+                    <motion.div 
+                        className="notifications-list"
+                        variants={staggerContainer}
+                        initial="hidden"
+                        animate="visible"
+                    >
+                        {notifications.map((notification) => (
+                            <NotificationCard 
+                                key={notification.id} 
+                                notification={notification}
+                                onMarkAsRead={handleMarkAsRead}
+                            />
+                        ))}
+                    </motion.div>
                 )}
             </div>
 
             <style jsx>{`
                 .notifications-page {
                     min-height: 100vh;
-                    background: #f8fafc;
+                    background: var(--bg-primary);
                 }
 
-                .page-header {
-                    background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
-                    color: white;
-                    padding: 32px;
+                .hero-small {
+                    padding: 80px 20px 40px;
+                    background: var(--gradient-hero);
+                    text-align: center;
+                    position: relative;
+                    overflow: hidden;
                 }
 
-                .header-content {
+                .hero-small::before {
+                    content: '';
+                    position: absolute;
+                    top: -50%;
+                    left: -50%;
+                    width: 200%;
+                    height: 200%;
+                    background: 
+                        radial-gradient(circle at 30% 30%, rgba(124, 58, 237, 0.15) 0%, transparent 40%),
+                        radial-gradient(circle at 70% 70%, rgba(20, 184, 166, 0.1) 0%, transparent 40%);
+                    animation: heroGlow 15s ease-in-out infinite;
+                }
+
+                @keyframes heroGlow {
+                    0%, 100% { transform: translate(0, 0) rotate(0deg); }
+                    50% { transform: translate(-5%, -5%) rotate(5deg); }
+                }
+
+                .hero-content {
+                    position: relative;
+                    z-index: 1;
+                    max-width: 600px;
+                    margin: 0 auto;
+                }
+
+                .hero-content h1 {
+                    font-size: 2.5rem;
+                    margin-bottom: 12px;
+                    background: linear-gradient(135deg, var(--text-primary) 0%, var(--color-primary-light) 100%);
+                    -webkit-background-clip: text;
+                    -webkit-text-fill-color: transparent;
+                    background-clip: text;
+                }
+
+                .hero-content p {
+                    color: var(--text-secondary);
+                    font-size: 1.125rem;
+                }
+
+                .notifications-container {
                     max-width: 800px;
                     margin: 0 auto;
+                    padding: 32px 20px;
+                }
+
+                .notifications-header {
                     display: flex;
                     justify-content: space-between;
                     align-items: center;
+                    margin-bottom: 24px;
+                    padding: 16px 20px;
+                    background: var(--gradient-card);
+                    backdrop-filter: blur(12px);
+                    border-radius: var(--radius-xl);
+                    border: 1px solid rgba(255, 255, 255, 0.06);
                 }
 
-                .page-header h1 {
-                    margin: 0;
-                    font-size: 28px;
-                }
-
-                .page-header p {
-                    margin: 4px 0 0;
-                    opacity: 0.9;
+                .unread-badge {
+                    font-weight: 600;
+                    color: var(--color-primary-light);
                 }
 
                 .mark-all-btn {
-                    padding: 10px 20px;
-                    background: white;
-                    color: #4f46e5;
-                    border: none;
-                    border-radius: 8px;
-                    font-weight: 600;
+                    padding: 8px 16px;
+                    background: transparent;
+                    border: 1px solid var(--color-primary);
+                    border-radius: var(--radius-md);
+                    color: var(--color-primary-light);
+                    font-size: 0.875rem;
                     cursor: pointer;
-                    transition: all 0.2s;
+                    transition: all var(--transition-fast);
                 }
 
                 .mark-all-btn:hover {
-                    transform: translateY(-2px);
-                    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-                }
-
-                .filters {
-                    display: flex;
-                    gap: 8px;
-                    max-width: 800px;
-                    margin: 0 auto;
-                    padding: 24px 32px;
-                }
-
-                .filter-btn {
-                    display: flex;
-                    align-items: center;
-                    gap: 8px;
-                    padding: 10px 16px;
-                    background: white;
-                    border: 1px solid #e5e7eb;
-                    border-radius: 8px;
-                    font-size: 14px;
-                    color: #6b7280;
-                    cursor: pointer;
-                    transition: all 0.2s;
-                }
-
-                .filter-btn.active {
-                    background: #4f46e5;
+                    background: var(--color-primary);
                     color: white;
-                    border-color: #4f46e5;
-                }
-
-                .badge {
-                    background: #dc2626;
-                    color: white;
-                    padding: 2px 8px;
-                    border-radius: 12px;
-                    font-size: 12px;
                 }
 
                 .notifications-list {
-                    max-width: 800px;
-                    margin: 0 auto;
-                    padding: 0 32px 32px;
                     display: flex;
                     flex-direction: column;
                     gap: 12px;
@@ -228,136 +284,170 @@ export default function Notifications() {
 
                 .notification-card {
                     display: flex;
+                    align-items: flex-start;
                     gap: 16px;
-                    background: white;
-                    border-radius: 12px;
                     padding: 20px;
-                    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-                    transition: all 0.2s;
-                }
-
-                .notification-card.unread {
-                    border-left: 4px solid #4f46e5;
-                    background: #f8fafc;
+                    background: var(--gradient-card);
+                    backdrop-filter: blur(12px);
+                    border: 1px solid rgba(255, 255, 255, 0.06);
+                    border-radius: var(--radius-xl);
+                    cursor: pointer;
+                    transition: all var(--transition-normal);
+                    position: relative;
                 }
 
                 .notification-card:hover {
-                    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+                    transform: translateX(4px);
+                    border-color: rgba(124, 58, 237, 0.2);
+                }
+
+                .notification-card.unread {
+                    background: linear-gradient(145deg, rgba(124, 58, 237, 0.1) 0%, rgba(30, 41, 59, 0.9) 100%);
                 }
 
                 .notification-icon {
-                    font-size: 24px;
-                    width: 40px;
-                    height: 40px;
+                    width: 48px;
+                    height: 48px;
                     display: flex;
                     align-items: center;
                     justify-content: center;
-                    background: #f3f4f6;
+                    background: rgba(255, 255, 255, 0.05);
                     border-radius: 50%;
+                    font-size: 1.5rem;
+                    flex-shrink: 0;
                 }
 
                 .notification-content {
                     flex: 1;
+                    min-width: 0;
                 }
 
-                .notification-title {
+                .notification-content h4 {
+                    font-size: 1rem;
                     font-weight: 600;
-                    color: #1f2937;
+                    color: var(--text-primary);
                     margin-bottom: 4px;
                 }
 
-                .notification-message {
-                    color: #6b7280;
+                .notification-content p {
+                    color: var(--text-secondary);
+                    font-size: 0.875rem;
                     margin-bottom: 8px;
+                    line-height: 1.5;
                 }
 
                 .notification-time {
-                    font-size: 12px;
-                    color: #9ca3af;
+                    font-size: 0.75rem;
+                    color: var(--text-tertiary);
                 }
 
-                .notification-actions {
+                .unread-dot {
+                    width: 10px;
+                    height: 10px;
+                    background: var(--color-primary);
+                    border-radius: 50%;
+                    position: absolute;
+                    top: 20px;
+                    right: 20px;
+                }
+
+                /* Skeleton */
+                .notification-skeleton {
                     display: flex;
-                    flex-direction: column;
-                    gap: 8px;
+                    gap: 16px;
+                    padding: 20px;
+                    background: var(--gradient-card);
+                    border-radius: var(--radius-xl);
                 }
 
-                .action-btn {
-                    padding: 6px 12px;
-                    border: none;
-                    border-radius: 6px;
-                    font-size: 12px;
-                    cursor: pointer;
-                    transition: all 0.2s;
+                .skeleton {
+                    background: linear-gradient(90deg, 
+                        var(--bg-tertiary) 25%, 
+                        var(--bg-secondary) 50%, 
+                        var(--bg-tertiary) 75%
+                    );
+                    background-size: 200% 100%;
+                    animation: shimmer 1.5s infinite;
+                    border-radius: var(--radius-md);
                 }
 
-                .mark-read {
-                    background: #e0e7ff;
-                    color: #4f46e5;
+                @keyframes shimmer {
+                    0% { background-position: 200% 0; }
+                    100% { background-position: -200% 0; }
                 }
 
-                .mark-read:hover {
-                    background: #c7d2fe;
-                }
-
-                .delete {
-                    background: #fee2e2;
-                    color: #dc2626;
-                }
-
-                .delete:hover {
-                    background: #fecaca;
-                }
-
+                /* Empty State */
                 .empty-state {
                     text-align: center;
-                    padding: 60px 20px;
-                    background: white;
-                    border-radius: 12px;
+                    padding: 80px 24px;
+                    background: var(--gradient-card);
+                    backdrop-filter: blur(12px);
+                    border: 1px solid rgba(255, 255, 255, 0.06);
+                    border-radius: var(--radius-xl);
                 }
 
-                .empty-icon {
-                    font-size: 64px;
+                .empty-state-icon {
+                    font-size: 4rem;
                     margin-bottom: 16px;
+                    opacity: 0.5;
                 }
 
                 .empty-state h3 {
-                    margin: 0;
-                    color: #1f2937;
+                    color: var(--text-secondary);
+                    margin-bottom: 8px;
                 }
 
                 .empty-state p {
-                    color: #6b7280;
-                    margin: 8px 0 0;
+                    color: var(--text-tertiary);
                 }
 
-                .loading, .error-message {
+                /* Error Fallback */
+                .error-fallback {
                     text-align: center;
-                    padding: 40px;
-                    color: #6b7280;
+                    padding: 48px 24px;
+                    background: rgba(239, 68, 68, 0.1);
+                    border: 1px solid rgba(239, 68, 68, 0.2);
+                    border-radius: var(--radius-xl);
                 }
 
-                .error-message {
-                    color: #dc2626;
+                .error-fallback h3 {
+                    color: var(--accent-error);
+                    margin-bottom: 8px;
+                }
+
+                .error-fallback p {
+                    color: var(--text-secondary);
+                    margin-bottom: 16px;
+                }
+
+                .error-fallback button {
+                    padding: 12px 24px;
+                    background: var(--gradient-primary);
+                    color: white;
+                    border: none;
+                    border-radius: var(--radius-md);
+                    font-weight: 500;
+                    cursor: pointer;
+                    transition: all var(--transition-fast);
+                }
+
+                .error-fallback button:hover {
+                    transform: translateY(-2px);
+                    box-shadow: var(--shadow-glow-primary);
                 }
 
                 @media (max-width: 768px) {
-                    .header-content {
-                        flex-direction: column;
-                        gap: 16px;
-                        text-align: center;
+                    .hero-content h1 {
+                        font-size: 2rem;
                     }
 
-                    .notification-card {
+                    .notifications-header {
                         flex-direction: column;
-                    }
-
-                    .notification-actions {
-                        flex-direction: row;
-                        justify-content: flex-end;
+                        gap: 12px;
                     }
                 }
             `}</style>
         </div>
     );
 }
+

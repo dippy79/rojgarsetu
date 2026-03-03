@@ -3,11 +3,11 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Express.js-5.x-blue" alt="Express.js">
   <img src="https://img.shields.io/badge/Next.js-13.5-green" alt="Next.js">
-  <img src="https://img.shields.io/badge/SQLite-Database-orange" alt="SQLite">
+  <img src="https://img.shields.io/badge/PostgreSQL-Database-blue" alt="PostgreSQL">
   <img src="https://img.shields.io/badge/License-MIT-yellow" alt="License">
 </p>
 
-A full-stack job and course listing platform with web crawling, multilingual support, and role-based access control. Built with Express.js backend and Next.js frontend.
+A full-stack job and course listing platform with web crawling, multilingual support, and role-based access control. Built with Express.js backend and Next.js frontend with dark glassmorphism UI.
 
 ## 🌟 Features
 

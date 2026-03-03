@@ -3,9 +3,17 @@ const jwt = require('jsonwebtoken');
 const { query } = require('../config/database');
 const logger = require('../utils/logger');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
+// Validate JWT_SECRET - warn in production if using default
+const DEFAULT_SECRET = 'your-secret-key-change-in-production';
+const JWT_SECRET = process.env.JWT_SECRET || DEFAULT_SECRET;
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '24h';
 const REFRESH_TOKEN_EXPIRES_IN = process.env.REFRESH_TOKEN_EXPIRES_IN || '7d';
+
+// Warn if using default secret in production
+if (process.env.NODE_ENV === 'production' && JWT_SECRET === DEFAULT_SECRET) {
+    console.error('⚠️  SECURITY WARNING: Using default JWT_SECRET in production!');
+    console.error('Please set JWT_SECRET environment variable for production.');
+}
 
 // Generate tokens
 const generateTokens = (userId, role) => {
