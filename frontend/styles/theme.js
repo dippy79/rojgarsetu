@@ -2,17 +2,17 @@
 // Futuristic, professional, eye-comfortable color palette
 
 export const theme = {
-  // Color Palette - Futuristic but Professional
+  // Color Palette - Modern Energetic SaaS Theme
   colors: {
-    // Primary Colors (Violet-based - no default blue)
-    primary: '#7C3AED',        // Violet
-    primaryLight: '#A78BFA',   // Light violet
-    primaryDark: '#5B21B6',    // Dark violet
+    // Primary Colors (Indigo-based)
+    primary: '#4F46E5',        // Indigo-600
+    primaryLight: '#818CF8',   // Indigo-400
+    primaryDark: '#3730A3',    // Indigo-800
     
-    // Secondary - Teal accent
-    secondary: '#14B8A6',      // Teal
-    secondaryLight: '#5EEAD4', // Light teal
-    secondaryDark: '#0F766E',  // Dark teal
+    // Secondary - Cyan accent
+    secondary: '#06B6D4',      // Cyan-500
+    secondaryLight: '#22D3EE', // Cyan-400
+    secondaryDark: '#0E7490',  // Cyan-700
     
     // Background Colors
     background: {
@@ -39,8 +39,8 @@ export const theme = {
     },
     // Category Badge Colors
     badges: {
-      government: '#7C3AED',  // Violet
-      private: '#14B8A6',     // Teal
+      government: '#4F46E5',  // Indigo
+      private: '#06B6D4',     // Cyan
       banking: '#F59E0B',      // Amber
       it: '#3B82F6',          // Blue
       defence: '#EF4444',      // Red
@@ -50,11 +50,11 @@ export const theme = {
       default: '#64748B',     // Gray
     },
     
-    // Gradient combinations
+    // Gradient combinations - Clean modern gradients
     gradients: {
-      hero: 'linear-gradient(135deg, #0F172A 0%, #1E293B 50%, #312E81 100%)',
-      primary: 'linear-gradient(135deg, #7C3AED 0%, #A78BFA 100%)',
-      secondary: 'linear-gradient(135deg, #14B8A6 0%, #5EEAD4 100%)',
+      hero: 'linear-gradient(135deg, #0F172A 0%, #1E293B 100%)',
+      primary: 'linear-gradient(135deg, #4F46E5 0%, #818CF8 100%)',
+      secondary: 'linear-gradient(135deg, #06B6D4 0%, #22D3EE 100%)',
       card: 'linear-gradient(145deg, rgba(30, 41, 59, 0.9) 0%, rgba(15, 23, 42, 0.95) 100%)',
     },
   },
@@ -119,8 +119,8 @@ export const theme = {
     lg: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1)',
     xl: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
     glow: {
-      primary: '0 0 20px rgba(124, 58, 237, 0.3)',
-      secondary: '0 0 20px rgba(20, 184, 166, 0.3)',
+      primary: '0 0 20px rgba(79, 70, 229, 0.3)',
+      secondary: '0 0 20px rgba(6, 182, 212, 0.3)',
     },
     glass: '0 8px 32px 0 rgba(0, 0, 0, 0.37)',
   },

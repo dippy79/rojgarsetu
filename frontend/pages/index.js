@@ -109,12 +109,12 @@ function JobCard({ job, index }) {
         </p>
       )}
       
-      {job.apply_link && (
+      {job.apply_link ? (
         <a 
           href={job.apply_link} 
           target="_blank" 
           rel="noopener noreferrer" 
-          className="apply-link"
+          className="apply-btn"
         >
           Apply Now
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -122,6 +122,17 @@ function JobCard({ job, index }) {
             <polyline points="12,5 19,12 12,19"/>
           </svg>
         </a>
+      ) : (
+        <button 
+          onClick={() => router.push(`/jobs/${job.id}`)}
+          className="apply-btn"
+        >
+          Apply Now
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <line x1="5" y1="12" x2="19" y2="12"/>
+            <polyline points="12,5 19,12 12,19"/>
+          </svg>
+        </button>
       )}
     </motion.div>
   );
@@ -191,12 +202,12 @@ function CourseCard({ course, index }) {
         </div>
       )}
       
-      {course.apply_link && (
+      {course.apply_link ? (
         <a 
           href={course.apply_link} 
           target="_blank" 
           rel="noopener noreferrer" 
-          className="apply-link"
+          className="apply-btn"
         >
           Enroll Now
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -204,6 +215,17 @@ function CourseCard({ course, index }) {
             <polyline points="12,5 19,12 12,19"/>
           </svg>
         </a>
+      ) : (
+        <button 
+          onClick={() => router.push(`/courses/${course.id}`)}
+          className="apply-btn"
+        >
+          Enroll Now
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <line x1="5" y1="12" x2="19" y2="12"/>
+            <polyline points="12,5 19,12 12,19"/>
+          </svg>
+        </button>
       )}
     </motion.div>
   );
@@ -391,7 +413,7 @@ export default function Home() {
             viewport={{ once: true }}
           >
             <h2>
-              <span style={{ color: '#A78BFA' }}>Government</span> Jobs
+              <span style={{ color: theme.colors.primary }}>Government</span> Jobs
             </h2>
             <Link href="/jobs?category=Government" className="section-link">
               View All Government Jobs
@@ -440,7 +462,7 @@ export default function Home() {
             viewport={{ once: true }}
           >
             <h2>
-              <span style={{ color: '#5EEAD4' }}>Private</span> Jobs
+              <span style={{ color: theme.colors.secondary }}>Private</span> Jobs
             </h2>
             <Link href="/jobs?category=Private" className="section-link">
               View All Private Jobs
@@ -591,6 +613,441 @@ export default function Home() {
           <p>© 2024 RojgarSetu. All rights reserved.</p>
         </div>
       </footer>
+
+      <style jsx>{`
+        .home-page {
+          min-height: 100vh;
+          background: ${theme.colors.background.primary};
+        }
+
+        .hero {
+          padding: 120px 20px 80px;
+          background: ${theme.colors.gradients.hero};
+          text-align: center;
+          position: relative;
+          overflow: hidden;
+        }
+
+        .hero-content h1 {
+          font-size: 3rem;
+          font-weight: 800;
+          margin-bottom: 20px;
+          background: ${theme.colors.gradients.primary};
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+          background-clip: text;
+        }
+
+        .hero-subtitle {
+          font-size: 1.25rem;
+          color: ${theme.colors.text.secondary};
+          margin-bottom: 40px;
+          max-width: 600px;
+          margin-left: auto;
+          margin-right: auto;
+        }
+
+        .hero-buttons {
+          display: flex;
+          gap: 20px;
+          justify-content: center;
+          flex-wrap: wrap;
+        }
+
+        .btn {
+          padding: 16px 32px;
+          border-radius: ${theme.borderRadius.lg};
+          font-weight: 600;
+          font-size: 1.125rem;
+          text-decoration: none;
+          border: none;
+          cursor: pointer;
+          transition: all 0.2s;
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+        }
+
+        .btn-primary {
+          background: ${theme.colors.primary};
+          color: white;
+        }
+
+        .btn-primary:hover {
+          background: ${theme.colors.primaryDark};
+          transform: translateY(-2px);
+          box-shadow: 0 10px 20px rgba(79, 70, 229, 0.3);
+        }
+
+        .btn-secondary {
+          background: ${theme.colors.secondary};
+          color: white;
+        }
+
+        .btn-secondary:hover {
+          background: ${theme.colors.secondaryDark};
+          transform: translateY(-2px);
+          box-shadow: 0 10px 20px rgba(6, 182, 212, 0.3);
+        }
+
+        .container {
+          max-width: 1400px;
+          margin: 0 auto;
+          padding: 0 20px;
+        }
+
+        .section {
+          padding: 80px 0;
+        }
+
+        .section-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 40px;
+        }
+
+        .section-header h2 {
+          font-size: 2rem;
+          font-weight: 700;
+          color: ${theme.colors.text.primary};
+        }
+
+        .section-link {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          color: ${theme.colors.text.secondary};
+          text-decoration: none;
+          font-weight: 500;
+          transition: color 0.2s;
+        }
+
+        .section-link:hover {
+          color: ${theme.colors.primary};
+        }
+
+        .jobs-grid, .courses-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+          gap: 24px;
+        }
+
+        .job-card, .course-card {
+          background: ${theme.colors.background.secondary};
+          border-radius: ${theme.borderRadius.xl};
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          padding: 24px;
+          transition: all 0.2s;
+          display: flex;
+          flex-direction: column;
+          height: 100%;
+        }
+
+        .job-card:hover, .course-card:hover {
+          transform: translateY(-6px);
+          box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+          border-color: rgba(255, 255, 255, 0.2);
+        }
+
+        .job-card-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          margin-bottom: 16px;
+          flex-wrap: wrap;
+          gap: 8px;
+        }
+
+        .badge {
+          padding: 4px 10px;
+          border-radius: ${theme.borderRadius.full};
+          font-size: 0.75rem;
+          font-weight: 600;
+          text-transform: uppercase;
+        }
+
+        .badge-featured {
+          background: ${theme.colors.accent.warning}20;
+          color: ${theme.colors.accent.warning};
+        }
+
+        .job-card h3, .course-card h3 {
+          font-size: 1.125rem;
+          font-weight: 600;
+          margin-bottom: 8px;
+          color: ${theme.colors.text.primary};
+        }
+
+        .job-card h3 a, .course-card h3 a {
+          color: ${theme.colors.text.primary};
+          text-decoration: none;
+          transition: color 0.2s;
+        }
+
+        .job-card h3 a:hover, .course-card h3 a:hover {
+          color: ${theme.colors.primary};
+        }
+
+        .job-company, .course-provider {
+          color: ${theme.colors.text.secondary};
+          font-size: 0.875rem;
+          margin-bottom: 16px;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+
+        .job-meta, .course-meta {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 16px;
+          color: ${theme.colors.text.tertiary};
+          font-size: 0.8125rem;
+          margin-bottom: 16px;
+        }
+
+        .job-meta span, .course-meta span {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+        }
+
+        .course-fees {
+          font-size: 1.125rem;
+          font-weight: 700;
+          color: ${theme.colors.primary};
+          margin-bottom: 16px;
+        }
+
+        .apply-link {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+          padding: 10px 20px;
+          background: transparent;
+          color: ${theme.colors.primary};
+          border: 2px solid ${theme.colors.primary};
+          border-radius: ${theme.borderRadius.md};
+          font-weight: 500;
+          font-size: 0.875rem;
+          text-decoration: none;
+          transition: all 0.2s;
+        }
+
+        .apply-link:hover {
+          background: ${theme.colors.primary};
+          color: white;
+          transform: translateY(-2px);
+          box-shadow: 0 8px 16px rgba(79, 70, 229, 0.3);
+        }
+
+        .apply-btn {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+          padding: 10px 20px;
+          background: ${theme.colors.primary};
+          color: white;
+          border: none;
+          border-radius: ${theme.borderRadius.md};
+          font-weight: 500;
+          font-size: 0.875rem;
+          cursor: pointer;
+          transition: all 0.2s;
+          margin-top: 12px;
+        }
+
+        .apply-btn:hover {
+          background: ${theme.colors.primaryDark};
+          transform: translateY(-2px);
+          box-shadow: 0 8px 16px rgba(79, 70, 229, 0.3);
+        }
+
+        .stats {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+          gap: 24px;
+          background: ${theme.colors.background.secondary};
+          border-radius: ${theme.borderRadius.xl};
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          padding: 40px;
+        }
+
+        .stat-item {
+          text-align: center;
+        }
+
+        .stat-number {
+          display: block;
+          font-size: 2.5rem;
+          font-weight: 800;
+          color: ${theme.colors.primary};
+          margin-bottom: 8px;
+        }
+
+        .stat-label {
+          display: block;
+          font-size: 0.9375rem;
+          color: ${theme.colors.text.secondary};
+          font-weight: 500;
+        }
+
+        .empty-state {
+          text-align: center;
+          padding: 80px 40px;
+          background: ${theme.colors.background.secondary};
+          border-radius: ${theme.borderRadius.xl};
+          border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .empty-state-icon {
+          font-size: 4rem;
+          margin-bottom: 16px;
+          opacity: 0.5;
+        }
+
+        .empty-state h3 {
+          color: ${theme.colors.text.secondary};
+          margin-bottom: 8px;
+        }
+
+        .empty-state p {
+          color: ${theme.colors.text.tertiary};
+          margin-bottom: 24px;
+        }
+
+        .cta-section {
+          text-align: center;
+          padding: 80px 20px;
+          background: ${theme.colors.background.secondary};
+        }
+
+        .cta-section h2 {
+          font-size: 2.5rem;
+          font-weight: 700;
+          color: ${theme.colors.text.primary};
+          margin-bottom: 16px;
+        }
+
+        .cta-section p {
+          font-size: 1.25rem;
+          color: ${theme.colors.text.secondary};
+          margin-bottom: 32px;
+          max-width: 600px;
+          margin-left: auto;
+          margin-right: auto;
+        }
+
+        .cta-buttons {
+          display: flex;
+          gap: 20px;
+          justify-content: center;
+          flex-wrap: wrap;
+        }
+
+        .footer {
+          background: ${theme.colors.background.tertiary};
+          padding: 60px 0 20px;
+          border-top: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .footer-content {
+          max-width: 1200px;
+          margin: 0 auto;
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+          gap: 40px;
+          margin-bottom: 40px;
+        }
+
+        .footer-section h4 {
+          color: ${theme.colors.text.primary};
+          margin-bottom: 16px;
+          font-size: 1.125rem;
+          font-weight: 600;
+        }
+
+        .footer-section ul {
+          list-style: none;
+          padding: 0;
+        }
+
+        .footer-section li {
+          margin-bottom: 8px;
+        }
+
+        .footer-section a {
+          color: ${theme.colors.text.secondary};
+          text-decoration: none;
+          transition: color 0.2s;
+        }
+
+        .footer-section a:hover {
+          color: ${theme.colors.primary};
+        }
+
+        .footer-bottom {
+          text-align: center;
+          padding-top: 20px;
+          border-top: 1px solid rgba(255, 255, 255, 0.1);
+          color: ${theme.colors.text.tertiary};
+        }
+
+        .skeleton {
+          background: linear-gradient(90deg, 
+            ${theme.colors.background.tertiary} 25%, 
+            ${theme.colors.background.secondary} 50%, 
+            ${theme.colors.background.tertiary} 75%
+          );
+          background-size: 200% 100%;
+          animation: shimmer 1.5s infinite;
+          border-radius: ${theme.borderRadius.md};
+        }
+
+        @keyframes shimmer {
+          0% { background-position: 200% 0; }
+          100% { background-position: -200% 0; }
+        }
+
+        @media (max-width: 768px) {
+          .hero-content h1 {
+            font-size: 2rem;
+          }
+
+          .hero-subtitle {
+            font-size: 1rem;
+          }
+
+          .hero-buttons, .cta-buttons {
+            flex-direction: column;
+            align-items: center;
+          }
+
+          .section-header {
+            flex-direction: column;
+            gap: 16px;
+            text-align: center;
+          }
+
+          .jobs-grid, .courses-grid {
+            grid-template-columns: 1fr;
+          }
+
+          .stats {
+            grid-template-columns: repeat(2, 1fr);
+            gap: 16px;
+            padding: 24px;
+          }
+
+          .footer-content {
+            grid-template-columns: 1fr;
+            gap: 32px;
+          }
+        }
+      `}</style>
     </div>
   );
 }

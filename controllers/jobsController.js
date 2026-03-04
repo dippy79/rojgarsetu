@@ -476,3 +476,177 @@ exports.getSimilarJobs = async (req, res) => {
         });
     }
 };
+
+// Get government jobs only
+exports.getGovernmentJobs = async (req, res) => {
+    try {
+        const {
+            category,
+            location,
+            search,
+            page = 1,
+            limit = 20,
+            sortBy = 'created_at',
+            sortOrder = 'desc'
+        } = req.query;
+
+        let whereClause = 'WHERE is_active = true AND is_government = true AND (last_date IS NULL OR last_date >= CURRENT_DATE)';
+        const values = [];
+        let paramIndex = 1;
+
+        if (category) {
+            whereClause += ` AND category ILIKE $${paramIndex}`;
+            values.push(`%${category}%`);
+            paramIndex++;
+        }
+
+        if (location) {
+            whereClause += ` AND location ILIKE $${paramIndex}`;
+            values.push(`%${location}%`);
+            paramIndex++;
+        }
+
+        if (search) {
+            whereClause += ` AND (title ILIKE $${paramIndex} OR description ILIKE $${paramIndex} OR COALESCE(company, organization) ILIKE $${paramIndex})`;
+            values.push(`%${search}%`);
+            paramIndex++;
+        }
+
+        const allowedSortColumns = ['created_at', 'last_date', 'title'];
+        const allowedSortOrders = ['asc', 'desc'];
+        
+        const orderBy = allowedSortColumns.includes(sortBy) ? sortBy : 'created_at';
+        const order = allowedSortOrders.includes(sortOrder.toLowerCase()) ? sortOrder.toLowerCase() : 'desc';
+
+        const countQuery = `SELECT COUNT(*) FROM jobs ${whereClause}`;
+        const countResult = await query(countQuery, values);
+        const totalCount = parseInt(countResult.rows[0].count);
+
+        const offset = (parseInt(page) - 1) * parseInt(limit);
+        const mainQuery = `
+            SELECT 
+                id, title, COALESCE(company, organization) as company, organization, category, type, location, 
+                criteria as eligibility_criteria, fees_structure, salary,
+                last_date, apply_link, source, is_featured, is_active, is_government,
+                created_at, updated_at,
+                CASE 
+                    WHEN last_date < CURRENT_DATE THEN true 
+                    ELSE false 
+                END as is_expired
+            FROM jobs
+            ${whereClause}
+            ORDER BY ${orderBy} ${order}
+            LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
+        `;
+        
+        values.push(parseInt(limit), offset);
+
+        const result = await query(mainQuery, values);
+
+        res.json({
+            success: true,
+            data: result.rows,
+            pagination: {
+                page: parseInt(page),
+                limit: parseInt(limit),
+                totalCount,
+                totalPages: Math.ceil(totalCount / parseInt(limit)),
+                hasNextPage: offset + result.rows.length < totalCount,
+                hasPrevPage: parseInt(page) > 1
+            }
+        });
+    } catch (err) {
+        logger.error('Get government jobs error:', err);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to fetch government jobs'
+        });
+    }
+};
+
+// Get private jobs only
+exports.getPrivateJobs = async (req, res) => {
+    try {
+        const {
+            category,
+            location,
+            search,
+            page = 1,
+            limit = 20,
+            sortBy = 'created_at',
+            sortOrder = 'desc'
+        } = req.query;
+
+        let whereClause = 'WHERE is_active = true AND (is_government = false OR is_government IS NULL) AND (last_date IS NULL OR last_date >= CURRENT_DATE)';
+        const values = [];
+        let paramIndex = 1;
+
+        if (category) {
+            whereClause += ` AND category ILIKE $${paramIndex}`;
+            values.push(`%${category}%`);
+            paramIndex++;
+        }
+
+        if (location) {
+            whereClause += ` AND location ILIKE $${paramIndex}`;
+            values.push(`%${location}%`);
+            paramIndex++;
+        }
+
+        if (search) {
+            whereClause += ` AND (title ILIKE $${paramIndex} OR description ILIKE $${paramIndex} OR COALESCE(company, organization) ILIKE $${paramIndex})`;
+            values.push(`%${search}%`);
+            paramIndex++;
+        }
+
+        const allowedSortColumns = ['created_at', 'last_date', 'title'];
+        const allowedSortOrders = ['asc', 'desc'];
+        
+        const orderBy = allowedSortColumns.includes(sortBy) ? sortBy : 'created_at';
+        const order = allowedSortOrders.includes(sortOrder.toLowerCase()) ? sortOrder.toLowerCase() : 'desc';
+
+        const countQuery = `SELECT COUNT(*) FROM jobs ${whereClause}`;
+        const countResult = await query(countQuery, values);
+        const totalCount = parseInt(countResult.rows[0].count);
+
+        const offset = (parseInt(page) - 1) * parseInt(limit);
+        const mainQuery = `
+            SELECT 
+                id, title, COALESCE(company, organization) as company, organization, category, type, location, 
+                criteria as eligibility_criteria, fees_structure, salary,
+                last_date, apply_link, source, is_featured, is_active, is_government,
+                created_at, updated_at,
+                CASE 
+                    WHEN last_date < CURRENT_DATE THEN true 
+                    ELSE false 
+                END as is_expired
+            FROM jobs
+            ${whereClause}
+            ORDER BY ${orderBy} ${order}
+            LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
+        `;
+        
+        values.push(parseInt(limit), offset);
+
+        const result = await query(mainQuery, values);
+
+        res.json({
+            success: true,
+            data: result.rows,
+            pagination: {
+                page: parseInt(page),
+                limit: parseInt(limit),
+                totalCount,
+                totalPages: Math.ceil(totalCount / parseInt(limit)),
+                hasNextPage: offset + result.rows.length < totalCount,
+                hasPrevPage: parseInt(page) > 1
+            }
+        });
+    } catch (err) {
+        logger.error('Get private jobs error:', err);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to fetch private jobs'
+        });
+    }
+};

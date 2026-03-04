@@ -122,6 +122,32 @@ function CourseCard({ course, index }) {
                     <polyline points="12,5 19,12 12,19"/>
                 </svg>
             </Link>
+            
+            {course.apply_link ? (
+                <a 
+                    href={course.apply_link} 
+                    target="_blank" 
+                    rel="noopener noreferrer" 
+                    className="apply-btn"
+                >
+                    Enroll Now
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <line x1="5" y1="12" x2="19" y2="12"/>
+                        <polyline points="12,5 19,12 12,19"/>
+                    </svg>
+                </a>
+            ) : (
+                <button 
+                    onClick={() => router.push(`/courses/${course.id}`)}
+                    className="apply-btn"
+                >
+                    Enroll Now
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <line x1="5" y1="12" x2="19" y2="12"/>
+                        <polyline points="12,5 19,12 12,19"/>
+                    </svg>
+                </button>
+            )}
         </motion.div>
     );
 }
@@ -614,22 +640,45 @@ export default function CoursesPage() {
                     align-items: center;
                     justify-content: center;
                     gap: 8px;
-                    padding: 12px 24px;
-                    background: var(--gradient-secondary);
-                    color: white;
-                    border-radius: var(--radius-md);
+                    padding: 10px 20px;
+                    background: transparent;
+                    color: ${theme.colors.secondary};
+                    border: 2px solid ${theme.colors.secondary};
+                    border-radius: ${theme.borderRadius.md};
                     font-weight: 500;
                     font-size: 0.875rem;
                     text-decoration: none;
-                    margin-top: auto;
                     transition: all var(--transition-normal);
-                    box-shadow: var(--shadow-md);
                 }
 
                 .apply-link:hover {
-                    transform: translateY(-2px);
-                    box-shadow: var(--shadow-lg), var(--shadow-glow-secondary);
+                    background: ${theme.colors.secondary};
                     color: white;
+                    transform: translateY(-2px);
+                    box-shadow: 0 8px 16px rgba(6, 182, 212, 0.3);
+                }
+
+                .apply-btn {
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    gap: 8px;
+                    padding: 10px 20px;
+                    background: ${theme.colors.secondary};
+                    color: white;
+                    border: none;
+                    border-radius: ${theme.borderRadius.md};
+                    font-weight: 500;
+                    font-size: 0.875rem;
+                    cursor: pointer;
+                    transition: all var(--transition-normal);
+                    margin-top: 12px;
+                }
+
+                .apply-btn:hover {
+                    background: ${theme.colors.secondaryDark};
+                    transform: translateY(-2px);
+                    box-shadow: 0 8px 16px rgba(6, 182, 212, 0.3);
                 }
 
                 /* Pagination */
