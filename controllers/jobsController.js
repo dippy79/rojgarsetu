@@ -25,7 +25,7 @@ exports.getJobs = async (req, res) => {
             sortOrder = 'desc'
         } = req.query;
 
-        // Build query dynamically - using existing database schema
+        // Build query dynamically - using correct database schema
         let whereClause = 'WHERE is_active = true AND (last_date IS NULL OR last_date >= CURRENT_DATE)';
         const values = [];
         let paramIndex = 1;
@@ -37,7 +37,7 @@ exports.getJobs = async (req, res) => {
         }
 
         if (type) {
-            whereClause += ` AND type = $${paramIndex}`;
+            whereClause += ` AND job_type = $${paramIndex}`;
             values.push(type);
             paramIndex++;
         }
@@ -49,7 +49,7 @@ exports.getJobs = async (req, res) => {
         }
 
         if (search) {
-            whereClause += ` AND (title ILIKE $${paramIndex} OR description ILIKE $${paramIndex} OR COALESCE(company, organization) ILIKE $${paramIndex})`;
+            whereClause += ` AND (title ILIKE $${paramIndex} OR description ILIKE $${paramIndex} OR COALESCE(organization, source) ILIKE $${paramIndex})`;
             values.push(`%${search}%`);
             paramIndex++;
         }
@@ -66,14 +66,28 @@ exports.getJobs = async (req, res) => {
         const countResult = await query(countQuery, values);
         const totalCount = parseInt(countResult.rows[0].count);
 
-        // Get paginated results - include is_government and organization
+        // Get paginated results - using exact column names from schema
         const offset = (parseInt(page) - 1) * parseInt(limit);
         const mainQuery = `
             SELECT 
-                id, title, COALESCE(company, organization) as company, organization, category, type, location, 
-                criteria as eligibility_criteria, fees_structure, salary,
-                last_date, apply_link, source, is_featured, is_active, is_government,
-                created_at, updated_at,
+                id,
+                title,
+                organization,
+                location,
+                salary_min,
+                salary_max,
+                job_type,
+                description,
+                apply_url,
+                posted_date,
+                last_date,
+                is_government,
+                category,
+                fees_structure,
+                is_featured,
+                is_active,
+                created_at,
+                updated_at,
                 CASE 
                     WHEN last_date < CURRENT_DATE THEN true 
                     ELSE false 
@@ -117,10 +131,16 @@ exports.getJobById = async (req, res) => {
     try {
         const query_text = `
             SELECT 
-                id, title, COALESCE(company, organization) as company, organization, category, type, location, 
-                criteria as eligibility_criteria, fees_structure, salary,
+                id, title, organization, category, type, location, 
+                eligibility_criteria, fees_structure, 
+                salary_min, salary_max,
+                CASE 
+                    WHEN salary_min IS NOT NULL AND salary_max IS NOT NULL 
+                    THEN CONCAT('₹', salary_min, ' - ₹', salary_max)
+                    ELSE NULL
+                END as salary,
                 description, last_date, apply_link, source, is_featured, is_active, is_government,
-                created_at, updated_at,
+                created_at, updated_at, posted_date,
                 CASE 
                     WHEN last_date < CURRENT_DATE THEN true 
                     ELSE false 

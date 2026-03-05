@@ -1,6 +1,7 @@
 // frontend/pages/index.js - Modern Futuristic Homepage
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/router';
 import useSWR from 'swr';
 import { motion, AnimatePresence } from 'framer-motion';
 import { jobsAPI, coursesAPI } from '../lib/api';
@@ -258,6 +259,8 @@ function CourseCardSkeleton() {
 
 // Main Home Component
 export default function Home() {
+  const router = useRouter();
+  
   // Fetch featured jobs
   const { data: jobsData, error: jobsError, isLoading: jobsLoading } = useSWR(
     '/api/jobs?limit=6',

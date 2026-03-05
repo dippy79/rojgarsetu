@@ -393,24 +393,33 @@ function generateContentHash(data) {
 // Insert job into database (with duplicate check)
 async function insertJob(jobData) {
     try {
-        // Generate content hash for duplicate detection
-        const contentHash = generateContentHash(jobData);
-        
-        // Check for duplicate by content_hash or apply_link
+        // Check for duplicate by apply_link
         const existing = await query(
-            'SELECT id FROM jobs WHERE content_hash = $1 OR apply_link = $2',
-            [contentHash, jobData.apply_link]
+            'SELECT id FROM jobs WHERE apply_link = $1',
+            [jobData.apply_link]
         );
 
         if (existing.rows.length > 0) {
             return { success: false, reason: 'duplicate', id: existing.rows[0].id };
         }
 
+        // Parse salary range if provided
+        let salaryMin = null;
+        let salaryMax = null;
+        if (jobData.salary) {
+            // Format: "₹3,50,000 - ₹8,00,000" or similar
+            const salaryMatch = jobData.salary.match(/₹?([\d,]+).*₹?([\d,]+)?/);
+            if (salaryMatch) {
+                salaryMin = parseInt(salaryMatch[1].replace(/,/g, ''));
+                salaryMax = salaryMatch[2] ? parseInt(salaryMatch[2].replace(/,/g, '')) : salaryMin;
+            }
+        }
+
         const result = await query(
             `INSERT INTO jobs 
-            (title, company, category, type, location, criteria, fees_structure, salary, 
-             last_date, apply_link, source, is_featured, is_active, content_hash, posted_date) 
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW())
+            (title, organization, category, type, location, eligibility_criteria, fees_structure, 
+             salary_min, salary_max, last_date, apply_link, source, is_featured, is_active, is_government, posted_date) 
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NOW())
             RETURNING id`,
             [
                 jobData.title,
@@ -420,13 +429,14 @@ async function insertJob(jobData) {
                 jobData.location,
                 jobData.eligibility_criteria,
                 jobData.fees_structure,
-                jobData.salary,
+                salaryMin,
+                salaryMax,
                 jobData.last_date,
                 jobData.apply_link,
                 jobData.source,
                 jobData.is_featured || false,
                 true,
-                contentHash
+                jobData.is_government || (jobData.category === 'Government')
             ]
         );
 
