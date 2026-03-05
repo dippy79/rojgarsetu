@@ -1,124 +1,102 @@
+// controllers/jobsController.js - Fixed with correct database schema
 const { query } = require('../config/database');
 const logger = require('../utils/logger');
 
+// Multilingual messages
 const messages = {
     expired: {
         en: "This job's application date has passed.",
         hi: "इस नौकरी के लिए आवेदन की अंतिम तिथि निकल चुकी है।",
-        ta: "இந்த வேலைக்கு விண்ணப்பிக்க கடைசி தேதி கடந்துவிட்டது।"
+        ta: "இந்த வேலைக்கு விண்ணப்பிக்க கடைசி தேதி கடந்துவிட்டது."
     }
 };
 
 // Get all jobs with filtering, search, and pagination
 exports.getJobs = async (req, res) => {
-    const lang = req.query.lang || 'en';
-    
     try {
-        const {
-            category,
-            type,
-            location,
-            search,
-            page = 1,
-            limit = 20,
-            sortBy = 'created_at',
-            sortOrder = 'desc'
-        } = req.query;
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 20;
+        const offset = (page - 1) * limit;
 
-        // Build query dynamically - using correct database schema
-        let whereClause = 'WHERE is_active = true AND (last_date IS NULL OR last_date >= CURRENT_DATE)';
+        // Build dynamic query based on filters
+        let whereClause = 'WHERE is_active = true';
         const values = [];
         let paramIndex = 1;
 
-        if (category) {
+        // Category filter
+        if (req.query.category) {
             whereClause += ` AND category ILIKE $${paramIndex}`;
-            values.push(`%${category}%`);
+            values.push(`%${req.query.category}%`);
             paramIndex++;
         }
 
-        if (type) {
-            whereClause += ` AND job_type = $${paramIndex}`;
-            values.push(type);
+        // Type filter
+        if (req.query.type) {
+            whereClause += ` AND type = $${paramIndex}`;
+            values.push(req.query.type);
             paramIndex++;
         }
 
-        if (location) {
+        // Location filter
+        if (req.query.location) {
             whereClause += ` AND location ILIKE $${paramIndex}`;
-            values.push(`%${location}%`);
+            values.push(`%${req.query.location}%`);
             paramIndex++;
         }
 
-        if (search) {
-            whereClause += ` AND (title ILIKE $${paramIndex} OR description ILIKE $${paramIndex} OR COALESCE(organization, source) ILIKE $${paramIndex})`;
-            values.push(`%${search}%`);
+        // Search filter (using title or description)
+        if (req.query.search) {
+            whereClause += ` AND (title ILIKE $${paramIndex} OR description ILIKE $${paramIndex})`;
+            values.push(`%${req.query.search}%`);
             paramIndex++;
         }
 
-        // Validate sort parameters
-        const allowedSortColumns = ['created_at', 'last_date', 'title'];
-        const allowedSortOrders = ['asc', 'desc'];
-        
-        const orderBy = allowedSortColumns.includes(sortBy) ? sortBy : 'created_at';
-        const order = allowedSortOrders.includes(sortOrder.toLowerCase()) ? sortOrder.toLowerCase() : 'desc';
+        // Filter out expired jobs (last_date < today)
+        whereClause += ` AND (last_date IS NULL OR last_date >= CURRENT_DATE)`;
 
         // Get total count
-        const countQuery = `SELECT COUNT(*) FROM jobs ${whereClause}`;
-        const countResult = await query(countQuery, values);
+        const countResult = await query(`SELECT COUNT(*) FROM jobs ${whereClause}`, values);
         const totalCount = parseInt(countResult.rows[0].count);
 
-        // Get paginated results - using exact column names from schema
-        const offset = (parseInt(page) - 1) * parseInt(limit);
-        const mainQuery = `
-            SELECT 
-                id,
-                title,
-                organization,
-                location,
-                salary_min,
-                salary_max,
-                job_type,
-                description,
-                apply_url,
-                posted_date,
-                last_date,
-                is_government,
-                category,
-                fees_structure,
-                is_featured,
-                is_active,
-                created_at,
-                updated_at,
+        // Get paginated jobs with correct column mapping
+        const result = await query(
+            `SELECT 
+                id, title, 
+                COALESCE(organization, source, 'RojgarSetu') as organization,
+                category, type, location,
+                salary_min, salary_max,
                 CASE 
-                    WHEN last_date < CURRENT_DATE THEN true 
-                    ELSE false 
-                END as is_expired
-            FROM jobs
+                    WHEN salary_min IS NOT NULL AND salary_max IS NOT NULL 
+                    THEN CONCAT('₹', salary_min, ' - ₹', salary_max)
+                    WHEN salary_min IS NOT NULL THEN CONCAT('₹', salary_min, '+')
+                    ELSE NULL
+                END as salary,
+                last_date, apply_link, is_featured, is_government,
+                created_at
+            FROM jobs 
             ${whereClause}
-            ORDER BY ${orderBy} ${order}
-            LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
-        `;
-        
-        values.push(parseInt(limit), offset);
-
-        const result = await query(mainQuery, values);
+            ORDER BY is_featured DESC, created_at DESC 
+            LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
+            [...values, limit, offset]
+        );
 
         res.json({
             success: true,
             data: result.rows,
             pagination: {
-                page: parseInt(page),
-                limit: parseInt(limit),
+                page,
+                limit,
                 totalCount,
-                totalPages: Math.ceil(totalCount / parseInt(limit)),
+                totalPages: Math.ceil(totalCount / limit),
                 hasNextPage: offset + result.rows.length < totalCount,
-                hasPrevPage: parseInt(page) > 1
+                hasPrevPage: page > 1
             }
         });
     } catch (err) {
-        logger.error('Get jobs error:', err);
-        res.status(500).json({ 
+        console.error('Get jobs error:', err.message);
+        res.status(500).json({
             success: false,
-            error: 'Failed to fetch jobs' 
+            error: 'Failed to fetch jobs: ' + err.message
         });
     }
 };
@@ -131,37 +109,42 @@ exports.getJobById = async (req, res) => {
     try {
         const query_text = `
             SELECT 
-                id, title, organization, category, type, location, 
-                eligibility_criteria, fees_structure, 
-                salary_min, salary_max,
+                j.id, j.title, 
+                COALESCE(j.organization, cp.company_name, j.source) as organization,
+                j.category, j.type as job_type, j.location, 
+                j.eligibility_criteria, j.fees_structure, 
+                j.salary_min, j.salary_max,
                 CASE 
-                    WHEN salary_min IS NOT NULL AND salary_max IS NOT NULL 
-                    THEN CONCAT('₹', salary_min, ' - ₹', salary_max)
+                    WHEN j.salary_min IS NOT NULL AND j.salary_max IS NOT NULL 
+                    THEN CONCAT('₹', j.salary_min, ' - ₹', j.salary_max)
+                    WHEN j.salary_min IS NOT NULL THEN CONCAT('₹', j.salary_min, '+')
                     ELSE NULL
                 END as salary,
-                description, last_date, apply_link, source, is_featured, is_active, is_government,
-                created_at, updated_at, posted_date,
+                j.description, j.last_date, j.apply_link, j.source as job_source, 
+                j.is_featured, j.is_active, j.is_government,
+                j.created_at, j.updated_at,
                 CASE 
-                    WHEN last_date < CURRENT_DATE THEN true 
+                    WHEN j.last_date < CURRENT_DATE THEN true 
                     ELSE false 
                 END as is_expired
-            FROM jobs
-            WHERE id = $1
+            FROM jobs j
+            LEFT JOIN company_profiles cp ON j.company_id = cp.id
+            WHERE j.id = $1
         `;
 
         const result = await query(query_text, [id]);
 
         if (result.rows.length === 0) {
-            return res.status(404).json({ 
+            return res.status(404).json({
                 success: false,
-                error: 'Job not found' 
+                error: 'Job not found'
             });
         }
 
         const job = result.rows[0];
 
         if (job.is_expired) {
-            return res.json({ 
+            return res.json({
                 success: true,
                 message: messages.expired[lang],
                 data: job
@@ -174,9 +157,9 @@ exports.getJobById = async (req, res) => {
         });
     } catch (err) {
         logger.error('Get job by ID error:', err);
-        res.status(500).json({ 
+        res.status(500).json({
             success: false,
-            error: 'Failed to fetch job' 
+            error: 'Failed to fetch job'
         });
     }
 };
@@ -186,15 +169,15 @@ exports.createJob = async (req, res) => {
     try {
         const {
             title,
-            company,
             organization,
             description,
             category,
             type,
             location,
-            criteria,
+            eligibility_criteria,
             fees_structure,
-            salary,
+            salary_min,
+            salary_max,
             apply_link,
             source,
             last_date,
@@ -204,15 +187,15 @@ exports.createJob = async (req, res) => {
 
         const result = await query(
             `INSERT INTO jobs (
-                title, company, organization, description, category, type, location,
-                criteria, fees_structure, salary, apply_link, source,
-                last_date, is_featured, is_active, is_government, posted_date
+                title, organization, description, category, type, location,
+                eligibility_criteria, fees_structure, salary_min, salary_max, 
+                apply_link, source, last_date, is_featured, is_active, is_government, created_at
             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, true, $15, NOW())
             RETURNING *`,
             [
-                title, company, organization, description, category, type, location,
-                criteria, fees_structure, salary, apply_link, source,
-                last_date, is_featured || false, is_government || false
+                title, organization, description, category, type, location,
+                eligibility_criteria, fees_structure, salary_min, salary_max,
+                apply_link, source, last_date, is_featured || false, is_government || false
             ]
         );
 
@@ -242,17 +225,18 @@ exports.updateJob = async (req, res) => {
         const values = [];
         let paramIndex = 1;
 
+        // Map frontend fields to database columns
         const allowedFields = {
             title: 'title',
-            company: 'company',
             organization: 'organization',
             description: 'description',
             category: 'category',
             type: 'type',
             location: 'location',
-            criteria: 'criteria',
+            eligibility_criteria: 'eligibility_criteria',
             fees_structure: 'fees_structure',
-            salary: 'salary',
+            salary_min: 'salary_min',
+            salary_max: 'salary_max',
             apply_link: 'apply_link',
             source: 'source',
             last_date: 'last_date',
@@ -262,7 +246,7 @@ exports.updateJob = async (req, res) => {
         };
 
         for (const [key, value] of Object.entries(updates)) {
-            if (allowedFields[key]) {
+            if (allowedFields[key] !== undefined && value !== undefined) {
                 setClause.push(`${allowedFields[key]} = $${paramIndex}`);
                 values.push(value);
                 paramIndex++;
@@ -370,8 +354,17 @@ exports.getFeaturedJobs = async (req, res) => {
 
         const result = await query(`
             SELECT 
-                id, title, COALESCE(company, organization) as company, organization, category, type, location, 
-                criteria as eligibility_criteria, fees_structure, salary,
+                id, title, 
+                COALESCE(organization, source, 'RojgarSetu') as organization,
+                category, type, location,
+                eligibility_criteria, fees_structure,
+                salary_min, salary_max,
+                CASE 
+                    WHEN salary_min IS NOT NULL AND salary_max IS NOT NULL 
+                    THEN CONCAT('₹', salary_min, ' - ₹', salary_max)
+                    WHEN salary_min IS NOT NULL THEN CONCAT('₹', salary_min, '+')
+                    ELSE NULL
+                END as salary,
                 last_date, apply_link, source, is_featured, is_government
             FROM jobs
             WHERE is_active = true
@@ -408,14 +401,23 @@ exports.searchJobs = async (req, res) => {
 
         const searchQuery = `
             SELECT 
-                id, title, COALESCE(company, organization) as company, organization, category, type, location, 
-                criteria as eligibility_criteria, fees_structure, salary,
+                id, title, 
+                COALESCE(organization, source, 'RojgarSetu') as organization,
+                category, type, location,
+                eligibility_criteria, fees_structure,
+                salary_min, salary_max,
+                CASE 
+                    WHEN salary_min IS NOT NULL AND salary_max IS NOT NULL 
+                    THEN CONCAT('₹', salary_min, ' - ₹', salary_max)
+                    WHEN salary_min IS NOT NULL THEN CONCAT('₹', salary_min, '+')
+                    ELSE NULL
+                END as salary,
                 last_date, apply_link, source, is_featured, is_government
             FROM jobs
             WHERE is_active = true
             AND (last_date IS NULL OR last_date >= CURRENT_DATE)
-            AND (title ILIKE $1 OR description ILIKE $1 OR COALESCE(company, organization) ILIKE $1)
-            ORDER BY created_at DESC
+            AND (title ILIKE $1 OR description ILIKE $1 OR COALESCE(organization, source) ILIKE $1)
+            ORDER BY is_featured DESC, created_at DESC
             LIMIT $2 OFFSET $3
         `;
 
@@ -427,7 +429,7 @@ exports.searchJobs = async (req, res) => {
             FROM jobs
             WHERE is_active = true
             AND (last_date IS NULL OR last_date >= CURRENT_DATE)
-            AND (title ILIKE $1 OR description ILIKE $1 OR COALESCE(company, organization) ILIKE $1)
+            AND (title ILIKE $1 OR description ILIKE $1 OR COALESCE(organization, source) ILIKE $1)
         `, [`%${q}%`]);
 
         res.json({
@@ -457,7 +459,7 @@ exports.getSimilarJobs = async (req, res) => {
 
         // Get job details first
         const jobResult = await query(
-            'SELECT category, company, organization FROM jobs WHERE id = $1',
+            'SELECT category, organization, source FROM jobs WHERE id = $1',
             [id]
         );
 
@@ -468,21 +470,30 @@ exports.getSimilarJobs = async (req, res) => {
             });
         }
 
-        const { category, company, organization } = jobResult.rows[0];
+        const { category, organization, source } = jobResult.rows[0];
 
         const result = await query(`
             SELECT 
-                id, title, COALESCE(company, organization) as company, organization, category, type, location, 
-                criteria as eligibility_criteria, fees_structure, salary,
+                id, title, 
+                COALESCE(organization, source, 'RojgarSetu') as organization,
+                category, type, location,
+                eligibility_criteria, fees_structure,
+                salary_min, salary_max,
+                CASE 
+                    WHEN salary_min IS NOT NULL AND salary_max IS NOT NULL 
+                    THEN CONCAT('₹', salary_min, ' - ₹', salary_max)
+                    WHEN salary_min IS NOT NULL THEN CONCAT('₹', salary_min, '+')
+                    ELSE NULL
+                END as salary,
                 last_date, apply_link, source, is_featured, is_government
             FROM jobs
             WHERE id != $1
             AND is_active = true
             AND (last_date IS NULL OR last_date >= CURRENT_DATE)
-            AND (category = $2 OR COALESCE(company, organization) = $3 OR COALESCE(company, organization) = $4)
-            ORDER BY created_at DESC
+            AND (category = $2 OR organization = $3 OR source = $4)
+            ORDER BY is_featured DESC, created_at DESC
             LIMIT $5
-        `, [id, category, company, organization, parseInt(limit)]);
+        `, [id, category, organization, source, parseInt(limit)]);
 
         res.json({
             success: true,
@@ -527,14 +538,14 @@ exports.getGovernmentJobs = async (req, res) => {
         }
 
         if (search) {
-            whereClause += ` AND (title ILIKE $${paramIndex} OR description ILIKE $${paramIndex} OR COALESCE(company, organization) ILIKE $${paramIndex})`;
+            whereClause += ` AND (title ILIKE $${paramIndex} OR description ILIKE $${paramIndex} OR organization ILIKE $${paramIndex} OR source ILIKE $${paramIndex})`;
             values.push(`%${search}%`);
             paramIndex++;
         }
 
         const allowedSortColumns = ['created_at', 'last_date', 'title'];
         const allowedSortOrders = ['asc', 'desc'];
-        
+
         const orderBy = allowedSortColumns.includes(sortBy) ? sortBy : 'created_at';
         const order = allowedSortOrders.includes(sortOrder.toLowerCase()) ? sortOrder.toLowerCase() : 'desc';
 
@@ -545,8 +556,17 @@ exports.getGovernmentJobs = async (req, res) => {
         const offset = (parseInt(page) - 1) * parseInt(limit);
         const mainQuery = `
             SELECT 
-                id, title, COALESCE(company, organization) as company, organization, category, type, location, 
-                criteria as eligibility_criteria, fees_structure, salary,
+                id, title, 
+                COALESCE(organization, source, 'RojgarSetu') as organization,
+                category, type, location,
+                eligibility_criteria, fees_structure,
+                salary_min, salary_max,
+                CASE 
+                    WHEN salary_min IS NOT NULL AND salary_max IS NOT NULL 
+                    THEN CONCAT('₹', salary_min, ' - ₹', salary_max)
+                    WHEN salary_min IS NOT NULL THEN CONCAT('₹', salary_min, '+')
+                    ELSE NULL
+                END as salary,
                 last_date, apply_link, source, is_featured, is_active, is_government,
                 created_at, updated_at,
                 CASE 
@@ -558,7 +578,7 @@ exports.getGovernmentJobs = async (req, res) => {
             ORDER BY ${orderBy} ${order}
             LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
         `;
-        
+
         values.push(parseInt(limit), offset);
 
         const result = await query(mainQuery, values);
@@ -614,14 +634,14 @@ exports.getPrivateJobs = async (req, res) => {
         }
 
         if (search) {
-            whereClause += ` AND (title ILIKE $${paramIndex} OR description ILIKE $${paramIndex} OR COALESCE(company, organization) ILIKE $${paramIndex})`;
+            whereClause += ` AND (title ILIKE $${paramIndex} OR description ILIKE $${paramIndex} OR organization ILIKE $${paramIndex} OR source ILIKE $${paramIndex})`;
             values.push(`%${search}%`);
             paramIndex++;
         }
 
         const allowedSortColumns = ['created_at', 'last_date', 'title'];
         const allowedSortOrders = ['asc', 'desc'];
-        
+
         const orderBy = allowedSortColumns.includes(sortBy) ? sortBy : 'created_at';
         const order = allowedSortOrders.includes(sortOrder.toLowerCase()) ? sortOrder.toLowerCase() : 'desc';
 
@@ -632,8 +652,17 @@ exports.getPrivateJobs = async (req, res) => {
         const offset = (parseInt(page) - 1) * parseInt(limit);
         const mainQuery = `
             SELECT 
-                id, title, COALESCE(company, organization) as company, organization, category, type, location, 
-                criteria as eligibility_criteria, fees_structure, salary,
+                id, title, 
+                COALESCE(organization, source, 'RojgarSetu') as organization,
+                category, type, location,
+                eligibility_criteria, fees_structure,
+                salary_min, salary_max,
+                CASE 
+                    WHEN salary_min IS NOT NULL AND salary_max IS NOT NULL 
+                    THEN CONCAT('₹', salary_min, ' - ₹', salary_max)
+                    WHEN salary_min IS NOT NULL THEN CONCAT('₹', salary_min, '+')
+                    ELSE NULL
+                END as salary,
                 last_date, apply_link, source, is_featured, is_active, is_government,
                 created_at, updated_at,
                 CASE 
@@ -645,7 +674,7 @@ exports.getPrivateJobs = async (req, res) => {
             ORDER BY ${orderBy} ${order}
             LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
         `;
-        
+
         values.push(parseInt(limit), offset);
 
         const result = await query(mainQuery, values);
@@ -670,3 +699,4 @@ exports.getPrivateJobs = async (req, res) => {
         });
     }
 };
+

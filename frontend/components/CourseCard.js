@@ -1,11 +1,17 @@
-// frontend/components/CourseCard.js - Course card component
+// frontend/components/CourseCard.js - Updated Course card component with correct API field mapping
 import Link from 'next/link';
 
 export default function CourseCard({ course, showEnroll = true }) {
-    // Format fees
-    const formatFees = (fees) => {
-        if (!fees || fees === '0' || fees === 0) return 'Free';
-        return `₹${fees}`;
+    // Format fees - API returns fees (from fees_amount) or fees_display
+    const formatFees = () => {
+        // Check if fees_display exists (from computed field)
+        if (course.fees_display) return course.fees_display;
+        
+        // Check if fees exists
+        if (!course.fees || course.fees === '0' || course.fees === 0) return 'Free';
+        
+        // Format with Rupee symbol
+        return `₹${Number(course.fees).toLocaleString('en-IN')}`;
     };
 
     // Get category badge color
@@ -22,6 +28,12 @@ export default function CourseCard({ course, showEnroll = true }) {
 
     const categoryColor = getCategoryColor(course.category);
 
+    // Title is now 'title' from API (aliased from 'name')
+    const courseTitle = course.title || course.name || 'Untitled Course';
+    
+    // Provider from API
+    const provider = course.provider || 'RojgarSetu';
+
     return (
         <div className="course-card">
             <div className="card-header">
@@ -30,40 +42,45 @@ export default function CourseCard({ course, showEnroll = true }) {
                     {course.category || 'Course'}
                 </span>
             </div>
-            
+
             <h3>
-                <Link href={'/courses/' + course.id}>{course.title}</Link>
+                <Link href={'/courses/' + course.id}>{courseTitle}</Link>
             </h3>
-            
+
             <p className="course-provider">
-                {course.provider || 'RojgarSetu'}
+                {provider}
             </p>
-            
+
             <div className="course-meta">
                 <span className="meta-item">
                     ⏱️ {course.duration || 'Self-paced'}
                 </span>
+                {course.mode && (
+                    <span className="meta-item">
+                        💻 {course.mode}
+                    </span>
+                )}
                 {course.level && (
                     <span className="meta-item">
                         📊 {course.level}
                     </span>
                 )}
             </div>
-            
-            {course.fees && (
+
+            {(course.fees || course.fees_display) && (
                 <div className="course-fees">
-                    {formatFees(course.fees)}
+                    {formatFees()}
                 </div>
             )}
-            
+
             {showEnroll && course.apply_link && (
                 <div className="card-actions">
                     <Link href={'/courses/' + course.id} className="view-btn">
                         View Details
                     </Link>
-                    <a 
-                        href={course.apply_link} 
-                        target="_blank" 
+                    <a
+                        href={course.apply_link}
+                        target="_blank"
                         rel="noopener noreferrer"
                         className="enroll-btn"
                     >
@@ -71,7 +88,7 @@ export default function CourseCard({ course, showEnroll = true }) {
                     </a>
                 </div>
             )}
-            
+
             <style jsx>{`
                 .course-card {
                     background: white;
@@ -89,6 +106,7 @@ export default function CourseCard({ course, showEnroll = true }) {
                     display: flex;
                     gap: 8px;
                     margin-bottom: 12px;
+                    flex-wrap: wrap;
                 }
                 .featured-badge {
                     background: linear-gradient(135deg, #059669 0%, #10b981 100%);
@@ -173,3 +191,4 @@ export default function CourseCard({ course, showEnroll = true }) {
         </div>
     );
 }
+

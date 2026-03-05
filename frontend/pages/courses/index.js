@@ -4,6 +4,7 @@ import Link from 'next/link';
 import useSWR from 'swr';
 import { motion } from 'framer-motion';
 import { coursesAPI } from '../../lib/api';
+import { theme } from '../../styles/theme';
 
 // Animation variants
 const fadeInUp = {

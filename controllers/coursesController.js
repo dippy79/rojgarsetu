@@ -1,3 +1,4 @@
+// controllers/coursesController.js - Fixed with correct database schema
 const { query } = require('../config/database');
 const logger = require('../utils/logger');
 
@@ -12,7 +13,7 @@ const messages = {
 // Get all courses with filtering, search, and pagination
 exports.getCourses = async (req, res) => {
     const lang = req.query.lang || 'en';
-    
+
     try {
         const {
             category,
@@ -23,7 +24,7 @@ exports.getCourses = async (req, res) => {
             sortOrder = 'desc'
         } = req.query;
 
-        // Build query dynamically - using existing database schema
+        // Build query dynamically - using correct database schema
         let whereClause = 'WHERE is_active = true';
         const values = [];
         let paramIndex = 1;
@@ -35,15 +36,15 @@ exports.getCourses = async (req, res) => {
         }
 
         if (search) {
-            whereClause += ` AND (title ILIKE $${paramIndex} OR description ILIKE $${paramIndex})`;
+            whereClause += ` AND (name ILIKE $${paramIndex} OR description ILIKE $${paramIndex})`;
             values.push(`%${search}%`);
             paramIndex++;
         }
 
         // Validate sort parameters
-        const allowedSortColumns = ['created_at', 'title', 'fees'];
+        const allowedSortColumns = ['created_at', 'name', 'fees_amount', 'duration'];
         const allowedSortOrders = ['asc', 'desc'];
-        
+
         const orderBy = allowedSortColumns.includes(sortBy) ? sortBy : 'created_at';
         const order = allowedSortOrders.includes(sortOrder.toLowerCase()) ? sortOrder.toLowerCase() : 'desc';
 
@@ -52,18 +53,23 @@ exports.getCourses = async (req, res) => {
         const countResult = await query(countQuery, values);
         const totalCount = parseInt(countResult.rows[0].count);
 
-        // Get paginated results - using simple schema
+        // Get paginated results - using correct schema (name as title, provider, fees_amount)
         const offset = (parseInt(page) - 1) * parseInt(limit);
         const mainQuery = `
             SELECT 
-                id, title, provider, category, duration, fees, 
-                apply_link, description, is_active, created_at, updated_at
+                id, name as title, provider, category, duration, 
+                fees_amount as fees, 
+                CASE 
+                    WHEN fees_amount IS NOT NULL THEN CONCAT('₹', fees_amount)
+                    ELSE NULL
+                END as fees_display,
+                apply_link, description, is_active, is_featured, created_at, updated_at
             FROM courses
             ${whereClause}
-            ORDER BY ${orderBy} ${order}
+            ORDER BY is_featured DESC, ${orderBy} ${order}
             LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
         `;
-        
+
         values.push(parseInt(limit), offset);
 
         const result = await query(mainQuery, values);
@@ -82,9 +88,9 @@ exports.getCourses = async (req, res) => {
         });
     } catch (err) {
         logger.error('Get courses error:', err);
-        res.status(500).json({ 
+        res.status(500).json({
             success: false,
-            error: 'Failed to fetch courses' 
+            error: 'Failed to fetch courses'
         });
     }
 };
@@ -97,8 +103,11 @@ exports.getCourseById = async (req, res) => {
     try {
         const query_text = `
             SELECT 
-                id, title, provider, category, duration, fees, 
-                apply_link, description, is_active, created_at, updated_at
+                id, name as title, provider, category, subcategory, duration,
+                duration_weeks, mode, fees_amount as fees, fees_structure,
+                eligibility, syllabus, certification, apply_link,
+                start_date, batch_size, enrolled_count, rating, reviews_count,
+                is_active, is_featured, views, created_at, updated_at
             FROM courses
             WHERE id = $1
         `;
@@ -106,16 +115,16 @@ exports.getCourseById = async (req, res) => {
         const result = await query(query_text, [id]);
 
         if (result.rows.length === 0) {
-            return res.status(404).json({ 
+            return res.status(404).json({
                 success: false,
-                error: 'Course not found' 
+                error: 'Course not found'
             });
         }
 
         const course = result.rows[0];
 
         if (!course.is_active) {
-            return res.json({ 
+            return res.json({
                 success: true,
                 message: messages.expired[lang],
                 data: course
@@ -128,9 +137,9 @@ exports.getCourseById = async (req, res) => {
         });
     } catch (err) {
         logger.error('Get course by ID error:', err);
-        res.status(500).json({ 
+        res.status(500).json({
             success: false,
-            error: 'Failed to fetch course' 
+            error: 'Failed to fetch course'
         });
     }
 };
@@ -139,24 +148,40 @@ exports.getCourseById = async (req, res) => {
 exports.addCourse = async (req, res) => {
     try {
         const {
-            title,
+            name,
             provider,
             description,
             category,
+            subcategory,
             duration,
-            fees,
-            apply_link
+            duration_weeks,
+            mode,
+            fees_amount,
+            fees_structure,
+            eligibility,
+            syllabus,
+            certification,
+            apply_link,
+            start_date,
+            batch_size,
+            is_featured
         } = req.body;
 
         const result = await query(
             `INSERT INTO courses (
-                title, provider, description, category, duration, fees, apply_link, is_active
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, true)
+                name, provider, description, category, subcategory, duration, duration_weeks,
+                mode, fees_amount, fees_structure, eligibility, syllabus, certification,
+                apply_link, start_date, batch_size, is_featured, is_active
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, true)
             RETURNING *`,
-            [title, provider, description, category, duration, fees, apply_link]
+            [
+                name, provider, description, category, subcategory, duration, duration_weeks,
+                mode, fees_amount, fees_structure, eligibility, syllabus, certification,
+                apply_link, start_date, batch_size, is_featured || false
+            ]
         );
 
-        logger.info(`Course created: ${title}`);
+        logger.info(`Course created: ${name}`);
 
         res.status(201).json({
             success: true,
@@ -182,19 +207,30 @@ exports.updateCourse = async (req, res) => {
         const values = [];
         let paramIndex = 1;
 
+        // Map frontend fields to database columns
         const allowedFields = {
-            title: 'title',
+            name: 'name',
             provider: 'provider',
             description: 'description',
             category: 'category',
+            subcategory: 'subcategory',
             duration: 'duration',
-            fees: 'fees',
+            duration_weeks: 'duration_weeks',
+            mode: 'mode',
+            fees_amount: 'fees_amount',
+            fees_structure: 'fees_structure',
+            eligibility: 'eligibility',
+            syllabus: 'syllabus',
+            certification: 'certification',
             apply_link: 'apply_link',
+            start_date: 'start_date',
+            batch_size: 'batch_size',
+            is_featured: 'is_featured',
             is_active: 'is_active'
         };
 
         for (const [key, value] of Object.entries(updates)) {
-            if (allowedFields[key]) {
+            if (allowedFields[key] !== undefined && value !== undefined) {
                 setClause.push(`${allowedFields[key]} = $${paramIndex}`);
                 values.push(value);
                 paramIndex++;
@@ -211,7 +247,7 @@ exports.updateCourse = async (req, res) => {
         values.push(id);
 
         const result = await query(
-            `UPDATE courses 
+            `UPDATE courses
              SET ${setClause.join(', ')}, updated_at = NOW()
              WHERE id = $${paramIndex}
              RETURNING *`,
@@ -297,16 +333,20 @@ exports.getCategories = async (req, res) => {
 // Get featured courses
 exports.getFeaturedCourses = async (req, res) => {
     try {
-        // Since there's no is_featured column, return recent courses as featured
         const { limit = 6 } = req.query;
 
         const result = await query(`
             SELECT 
-                id, title, provider, category, duration, fees, 
-                apply_link, description
+                id, name as title, provider, category, duration,
+                fees_amount as fees,
+                CASE 
+                    WHEN fees_amount IS NOT NULL THEN CONCAT('₹', fees_amount)
+                    ELSE NULL
+                END as fees_display,
+                apply_link, description, is_featured
             FROM courses
             WHERE is_active = true
-            ORDER BY created_at DESC
+            ORDER BY is_featured DESC, created_at DESC
             LIMIT $1
         `, [parseInt(limit)]);
 
@@ -337,12 +377,17 @@ exports.searchCourses = async (req, res) => {
 
         const searchQuery = `
             SELECT 
-                id, title, provider, category, duration, fees, 
+                id, name as title, provider, category, duration,
+                fees_amount as fees,
+                CASE 
+                    WHEN fees_amount IS NOT NULL THEN CONCAT('₹', fees_amount)
+                    ELSE NULL
+                END as fees_display,
                 apply_link, description
             FROM courses
             WHERE is_active = true
-            AND (title ILIKE $1 OR description ILIKE $1 OR provider ILIKE $1)
-            ORDER BY created_at DESC
+            AND (name ILIKE $1 OR description ILIKE $1 OR provider ILIKE $1)
+            ORDER BY is_featured DESC, created_at DESC
             LIMIT $2 OFFSET $3
         `;
 
@@ -353,7 +398,7 @@ exports.searchCourses = async (req, res) => {
             SELECT COUNT(*)
             FROM courses
             WHERE is_active = true
-            AND (title ILIKE $1 OR description ILIKE $1 OR provider ILIKE $1)
+            AND (name ILIKE $1 OR description ILIKE $1 OR provider ILIKE $1)
         `, [`%${q}%`]);
 
         res.json({
@@ -398,13 +443,18 @@ exports.getSimilarCourses = async (req, res) => {
 
         const result = await query(`
             SELECT 
-                id, title, provider, category, duration, fees, 
+                id, name as title, provider, category, duration,
+                fees_amount as fees,
+                CASE 
+                    WHEN fees_amount IS NOT NULL THEN CONCAT('₹', fees_amount)
+                    ELSE NULL
+                END as fees_display,
                 apply_link, description
             FROM courses
             WHERE id != $1
             AND is_active = true
             AND (category = $2 OR provider = $3)
-            ORDER BY created_at DESC
+            ORDER BY is_featured DESC, created_at DESC
             LIMIT $4
         `, [id, category, provider, parseInt(limit)]);
 
@@ -420,3 +470,4 @@ exports.getSimilarCourses = async (req, res) => {
         });
     }
 };
+
